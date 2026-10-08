@@ -1,0 +1,264 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  role      String   @default("MD")
+  category  String   @default("뷰티 전체")
+  createdAt DateTime @default(now())
+}
+
+model TaskGroup {
+  id        String   @id @default(cuid())
+  goal      String
+  reason    String
+  tasks     Task[]
+  createdAt DateTime @default(now())
+}
+
+model Task {
+  id           String     @id @default(cuid())
+  title        String
+  description  String     @default("")
+  category     String
+  priority     String
+  dueAt        DateTime?
+  dueLabel     String
+  status       String     @default("대기")
+  aiExecutable Boolean    @default(false)
+  source       String     @default("USER_INPUT")
+  reason       String     @default("")
+  groupId      String?
+  group        TaskGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model SalesMetric {
+  id        String   @id @default(cuid())
+  date      DateTime
+  category  String
+  revenue   Int
+  orders    Int
+  visitors  Int
+  createdAt DateTime @default(now())
+
+  @@unique([date, category])
+}
+
+model Brand {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  status    String
+  products  Product[]
+  createdAt DateTime  @default(now())
+}
+
+model Product {
+  id         String     @id @default(cuid())
+  name       String     @unique
+  category   String
+  lifecycle  String
+  revenue    Int
+  salesQty   Int
+  marginRate Float
+  risk       String
+  brandId    String
+  brand      Brand      @relation(fields: [brandId], references: [id])
+  inventory  Inventory?
+  createdAt  DateTime   @default(now())
+}
+
+model Inventory {
+  id                  String          @id @default(cuid())
+  productId           String          @unique
+  product             Product         @relation(fields: [productId], references: [id])
+  stockQty            Int
+  dailySales           Int
+  stockDays            Int
+  leadTimeDays         Int
+  safetyStock          Int
+  expectedStockoutDate DateTime
+  status               String
+  recommendedOrderQty Int
+  orderStatus          String          @default("미발주")
+  purchaseOrders       PurchaseOrder[]
+  updatedAt            DateTime        @updatedAt
+}
+
+model PurchaseOrder {
+  id              String    @id @default(cuid())
+  inventoryId     String
+  inventory       Inventory @relation(fields: [inventoryId], references: [id])
+  quantity        Int
+  status          String
+  expectedArrival DateTime
+  createdAt       DateTime  @default(now())
+}
+
+model MarketKeyword {
+  id          String   @id @default(cuid())
+  keyword     String   @unique
+  monthlyVolume Int
+  yearOverYear Int
+  judgment    String
+  currentIndex Int
+  tenWeeksChange Int
+  risingSince String
+  weeklySeries String
+  createdAt   DateTime @default(now())
+}
+
+model MarketTrend {
+  id             String   @id @default(cuid())
+  title          String
+  event          String
+  impact         String
+  recommendation String
+  evidence       String
+  createdAt      DateTime @default(now())
+}
+
+model Article {
+  id                String            @id @default(cuid())
+  publisher         String
+  publishedAt       DateTime
+  title             String
+  summary           String
+  recommendationWhy String
+  saved             Boolean           @default(false)
+  feedback          ArticleFeedback[]
+}
+
+model ArticleFeedback {
+  id        String   @id @default(cuid())
+  articleId String
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  value     String
+  createdAt DateTime @default(now())
+}
+
+model Competitor {
+  id        String            @id @default(cuid())
+  name      String            @unique
+  events    CompetitorEvent[]
+  createdAt DateTime          @default(now())
+}
+
+model CompetitorEvent {
+  id                 String     @id @default(cuid())
+  competitorId       String
+  competitor         Competitor @relation(fields: [competitorId], references: [id])
+  type               String
+  title              String
+  detail             String
+  impactEstimate     Int
+  affectedSkuCount   Int
+  overlapDescription String
+  startAt            DateTime
+  endAt              DateTime
+  createdAt          DateTime   @default(now())
+}
+
+model Promotion {
+  id             String   @id @default(cuid())
+  name           String
+  goal           String
+  period         String
+  targetSkus     String
+  benefit        String
+  budget         Int
+  expectedEffect String
+  collaboration  String
+  deliverables   String
+  rationale      String
+  stage          String   @default("아이디어")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  title       String
+  type        String
+  startAt     DateTime
+  endAt       DateTime
+  status      String   @default("예정")
+  sourceId    String?
+  description String   @default("")
+  createdAt   DateTime @default(now())
+}
+
+model CollaborationRequest {
+  id          String   @id @default(cuid())
+  title       String
+  team        String
+  owner       String
+  dueAt       DateTime
+  status      String
+  purpose     String
+  deliverable String
+  reference   String
+  requestText String
+  createdAt   DateTime @default(now())
+}
+
+model PerformanceReport {
+  id           String   @id @default(cuid())
+  title        String
+  period       String
+  achievement  Int
+  summary      String
+  wins         String
+  misses       String
+  nextActions  String
+  createdAt    DateTime @default(now())
+}
+
+model KnowledgeDocument {
+  id        String   @id @default(cuid())
+  title     String
+  type      String
+  content   String
+  source    String
+  tags      String
+  createdAt DateTime @default(now())
+}
+
+model Insight {
+  id             String   @id @default(cuid())
+  type           String
+  title          String
+  interpretation String
+  impact         String
+  evidence       String
+  actionLabel    String
+  actionTarget   String
+  severity       String
+  createdAt      DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  title     String
+  detail    String
+  read      Boolean  @default(false)
+  target    String
+  createdAt DateTime @default(now())
+}
+
+model AIConversation {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  context   String
+  createdAt DateTime @default(now())
+}

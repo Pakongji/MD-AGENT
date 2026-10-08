@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: md-ai-agent
+    runtime: docker
+    region: singapore
+    plan: 0.5c-512mb
+    autoDeployTrigger: commit
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        value: file:/var/data/md-agent.db
+      - key: AI_PROVIDER
+        value: mock
+      - key: OPENAI_API_KEY
+        sync: false
+    disk:
+      name: md-ai-agent-data
+      mountPath: /var/data
+      sizeGB: 1
