@@ -26,7 +26,7 @@ const nav = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { data, load, command, busy, toast, clearToast } = useAppStore();
+  const { data, load, command, loading, busy, toast, clearToast, showToast } = useAppStore();
   const [question, setQuestion] = useState("");
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotLoading, setCopilotLoading] = useState(false);
@@ -39,6 +39,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => { void load(); }, [load]);
 
   async function askCopilot() {
+    if (loading) { showToast("업무 데이터를 불러온 뒤 질문해주세요.", "info"); return; }
     if (question.trim().length < 2) return;
     setCopilotOpen(true); setCopilotLoading(true); setAnswer(null);
     const response = await fetch("/api/ai/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, page: pathname }) });

@@ -153,6 +153,17 @@ export class MockAIProvider implements AIProvider {
   async answer(question: string, page: string, data: DashboardData): Promise<CopilotAnswer> {
     if (/(재고|발주|A 립밤)/.test(question)) {
       const item = data.inventory.find((inventory) => inventory.product?.name === "A 립밤");
+      const order = item?.purchaseOrders?.[0];
+      if (item?.orderStatus === "발주 완료" && order) {
+        const arrival = new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric" }).format(new Date(order.expectedArrival));
+        const overdue = new Date(order.expectedArrival) < new Date();
+        return {
+          conclusion: overdue ? `A 립밤 ${order.quantity.toLocaleString()}개 발주는 완료됐지만 ${arrival} 입고 예정일이 지나 실제 입고 여부 확인이 우선입니다.` : `A 립밤은 ${order.quantity.toLocaleString()}개 발주가 완료되어 추가 발주보다 입고 추적이 우선입니다.`,
+          evidence: [`발주 상태 ${order.status} · 입고 예정 ${arrival}`, `현재 재고 ${item.stockQty.toLocaleString()}개 · 일평균 판매 ${item.dailySales.toLocaleString()}개`, `현재 재고 ${item.stockDays}일분과 리드타임 ${item.leadTimeDays}일 사이 공백 가능성은 계속 관찰해야 합니다.`],
+          impact: overdue ? "같은 발주를 다시 만들 필요는 없습니다. 입고 미반영인지 실제 지연인지 확인하고, 지연이면 품절 대응 일정을 조정해야 합니다." : "같은 발주를 다시 만들 필요는 없지만, 입고 전 품절 가능성이 남아 있어 공급사 일정 확인이 필요합니다.",
+          actions: [{ label: "입고 추적 확인", target: "/inventory" }, { label: "캘린더 보기", target: "/calendar" }],
+        };
+      }
       return {
         conclusion: "A 립밤은 오늘 추가 발주 결정을 권장합니다.",
         evidence: [`현재 재고 ${item?.stockQty ?? 720}개 · 일평균 판매 ${item?.dailySales ?? 180}개`, `재고 ${item?.stockDays ?? 4}일분보다 리드타임 ${item?.leadTimeDays ?? 7}일이 깁니다.`, `안전재고를 포함한 권장 수량은 ${item?.recommendedOrderQty.toLocaleString() ?? "1,200"}개입니다.`],
@@ -173,7 +184,17 @@ export class MockAIProvider implements AIProvider {
       actions: [{ label: "가격 비교", target: "/competitors" }, { label: "대응 업무 추가", target: "/tasks", taskTitle: "B사 립 할인 대응안 결정" }],
     };
     if (/(작년|과거|뭐가 잘|지식)/.test(question)) {
-      const doc = data.knowledgeDocuments[0];
+      const terms = [...new Set(question.replace(/[^0-9A-Za-z가-힣\s]/g, " ").split(/\s+/).filter((term) => term.length >= 2))];
+      const doc = data.knowledgeDocuments
+        .map((document) => {
+          const searchable = `${document.title} ${document.tags} ${document.content}`.toLowerCase();
+          let score = terms.reduce((total, term) => total + (searchable.includes(term.toLowerCase()) ? 2 : 0), 0);
+          if (/립/.test(question) && searchable.includes("립")) score += 5;
+          if (/프로모션|기획전/.test(question) && /(프로모션|기획전)/.test(searchable)) score += 4;
+          if (/작년/.test(question) && /2025/.test(document.title)) score += 4;
+          return { document, score };
+        })
+        .sort((a, b) => b.score - a.score)[0]?.document;
       return {
         conclusion: "작년 10월 립 기획전에서는 단품보다 세트상품 반응이 좋았습니다.",
         evidence: ["매출 +24%", "객단가 +12%", "오후 8시 CRM 유입의 구매전환율이 높았음"],
@@ -189,9 +210,9 @@ export class MockAIProvider implements AIProvider {
       actions: [{ label: "매출 분석", target: "/sales" }],
     };
     return {
-      conclusion: `${page === "/" ? "홈" : page}의 현재 데이터에서는 재고·립오일 트렌드·B사 할인 대응이 우선입니다.`,
-      evidence: ["A 립밤 재고 4일분", "립오일 검색 관심도 7주 연속 상승", "B사 립 20% 할인 시작"],
-      impact: "오늘 발주 결정과 경쟁사 대응 검토가 늦어지면 품절과 매출 하락 가능성이 함께 커질 수 있습니다.",
+      conclusion: `${page === "/" ? "홈" : page}의 현재 데이터에서는 ${data.inventory.find((item) => item.product?.name === "A 립밤")?.orderStatus === "발주 완료" ? "A 립밤 입고 추적" : "A 립밤 발주 결정"}·립오일 트렌드·B사 할인 대응이 우선입니다.`,
+      evidence: [`A 립밤 ${data.inventory.find((item) => item.product?.name === "A 립밤")?.orderStatus === "발주 완료" ? "발주 완료·입고 추적 중" : "재고 4일분"}`, "립오일 검색 관심도 7주 연속 상승", "B사 립 20% 할인 시작"],
+      impact: "재고 실행 상태와 경쟁사 대응을 함께 확인하면 중복 업무를 줄이면서 품절과 매출 하락 가능성을 관리할 수 있습니다.",
       actions: [{ label: "오늘의 업무", target: "/tasks" }],
     };
   }

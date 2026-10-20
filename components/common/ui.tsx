@@ -1,6 +1,7 @@
 "use client";
 
 import { LoaderCircle, X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 
@@ -9,7 +10,13 @@ export function Button({ variant = "primary", className = "", children, ...props
 }
 
 export function Card({ children, className = "", onClick }: { children: ReactNode; className?: string; onClick?: () => void }) {
-  return <section className={`card ${onClick ? "card-clickable" : ""} ${className}`} onClick={onClick}>{children}</section>;
+  return <section
+    className={`card ${onClick ? "card-clickable" : ""} ${className}`}
+    onClick={onClick}
+    role={onClick ? "button" : undefined}
+    tabIndex={onClick ? 0 : undefined}
+    onKeyDown={onClick ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onClick(); } } : undefined}
+  >{children}</section>;
 }
 
 export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "red" | "orange" | "blue" | "green" | "purple" }) {
@@ -25,10 +32,20 @@ export function Metric({ label, value, delta, tone = "neutral" }: { label: strin
 }
 
 export function Modal({ open, title, children, onClose, width = "680px" }: { open: boolean; title: string; children: ReactNode; onClose: () => void; width?: string }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => {
+    if (!open) return;
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onCloseRef.current(); };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
   if (!open) return null;
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}>
     <div className="modal" role="dialog" aria-modal="true" aria-label={title} style={{ maxWidth: width }}>
-      <div className="modal-header"><h2>{title}</h2><button className="icon-button" onClick={onClose} aria-label="닫기"><X size={18} /></button></div>
+      <div className="modal-header"><h2>{title}</h2><button ref={closeRef} className="icon-button" onClick={onClose} aria-label="닫기"><X size={18} /></button></div>
       <div className="modal-body">{children}</div>
     </div>
   </div>;
