@@ -1,5 +1,35 @@
 import type { AIProvider, CopilotAnswer } from "@/lib/ai/provider";
 import type { DashboardData, TaskPlanGoal, TaskPlanResult, TaskPlanTask } from "@/lib/types/domain";
+import { getSalesSnapshot, signedPercent } from "@/lib/services/dashboard-metrics";
+
+const number = (value: number) => new Intl.NumberFormat("ko-KR").format(value);
+
+function withTopic(value: string) {
+  const code = value.charCodeAt(value.length - 1);
+  const hasBatchim = code >= 0xac00 && code <= 0xd7a3 && (code - 0xac00) % 28 !== 0;
+  return `${value}${hasBatchim ? "은" : "는"}`;
+}
+
+function tomorrowAt(hour: number) {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(hour, 0, 0, 0);
+  return tomorrow.toISOString();
+}
+
+function requestedQuantity(question: string, fallback: number) {
+  const matched = question.match(/([0-9][0-9,]*)\s*개/);
+  return matched ? Number(matched[1].replaceAll(",", "")) : fallback;
+}
+
+function requestedTaskTitle(question: string) {
+  const title = question
+    .replace(/^(오늘(의)?\s*)?(업무|할 일)(에)?\s*/g, "")
+    .replace(/\s*(업무|할 일)?\s*(추가|등록)(해\s*줘|해주세요|해줘|해)?[.!?]*$/g, "")
+    .replace(/\s*(업무|할 일)?\s*만들어\s*(줘|주세요)?[.!?]*$/g, "")
+    .trim();
+  return title || "새 업무";
+}
 
 function dueFrom(input: string) {
   const match = input.match(/(오전|오후)\s*(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분)?/);
@@ -151,38 +181,114 @@ export class MockAIProvider implements AIProvider {
   }
 
   async answer(question: string, page: string, data: DashboardData): Promise<CopilotAnswer> {
-    if (/(재고|발주|A 립밤)/.test(question)) {
-      const item = data.inventory.find((inventory) => inventory.product?.name === "A 립밤");
+    const openTasks = data.tasks.filter((item) => item.status !== "완료").sort((a, b) => {
+      const priority = { HIGH: 0, MEDIUM: 1, LOW: 2 } as const;
+      return priority[a.priority] - priority[b.priority] || new Date(a.dueAt ?? "2999-12-31").getTime() - new Date(b.dueAt ?? "2999-12-31").getTime();
+    });
+    const firstTask = openTasks[0];
+    const sales = getSalesSnapshot(data.salesMetrics);
+
+    if (/(첫|1번|가장 먼저).*(업무|할 일).*(완료|끝)|완료.*(첫|1번).*(업무|할 일)/.test(question) && firstTask) return {
+      conclusion: `현재 우선순위가 가장 높은 “${firstTask.title}”을 완료 처리할 수 있습니다.`,
+      evidence: [`우선순위 ${firstTask.priority === "HIGH" ? "높음" : firstTask.priority === "MEDIUM" ? "중간" : "낮음"}`, `마감 ${firstTask.dueLabel}`, firstTask.reason],
+      impact: "완료하면 오늘의 업무와 홈의 미완료 건수가 즉시 갱신됩니다.",
+      actions: [{ label: "이 업무 완료 처리", command: { type: "TOGGLE_TASK", id: firstTask.id }, resultMessage: `“${firstTask.title}”을 완료했습니다.` }, { label: "업무 목록 보기", target: "/tasks" }],
+    };
+
+    if (/(오늘|현재).*(업무|할 일)|업무.*(알려|보여|정리)|우선순위/.test(question)) return {
+      conclusion: `오늘 미완료 업무는 ${openTasks.length}건이며, 가장 먼저 “${firstTask?.title ?? "등록된 업무 확인"}”을 처리하는 것이 좋습니다.`,
+      evidence: openTasks.slice(0, 3).map((item, index) => `${index + 1}. ${item.title} · ${item.dueLabel}`),
+      impact: `이 중 AI가 초안을 만들 수 있는 업무는 ${openTasks.filter((item) => item.aiExecutable).length}건입니다.`,
+      actions: firstTask ? [{ label: "첫 업무 완료 처리", command: { type: "TOGGLE_TASK", id: firstTask.id }, resultMessage: `“${firstTask.title}”을 완료했습니다.` }, { label: "전체 업무 보기", target: "/tasks" }] : [{ label: "업무 만들기", target: "/tasks" }],
+    };
+
+    if (/(리포트|보고서).*(생성|만들|작성)|성과.*(정리|회고)/.test(question)) return {
+      conclusion: "최근 30일 성과를 회고하고 다음 액션까지 포함한 AI 리포트를 만들 수 있습니다.",
+      evidence: [`목표 달성률 ${sales.achievementRate.toFixed(1)}%`, `매출 직전 30일 대비 ${signedPercent(sales.revenueChangeRate)}`, `완료 업무 ${data.tasks.filter((item) => item.status === "완료").length}건`],
+      impact: "생성된 리포트는 성과 분석과 지식 저장소에 동시에 보관됩니다.",
+      actions: [{ label: "10월 성과 리포트 생성", command: { type: "GENERATE_REPORT", period: "2026년 10월" }, resultMessage: "성과 리포트를 만들고 지식 저장소에 저장했습니다." }, { label: "성과 분석 보기", target: "/performance" }],
+    };
+
+    if (/(디자인|마케팅|SCM|법무).*(요청|협업).*(만들|작성|보내)|협업 요청.*(만들|생성)/.test(question)) {
+      const team = question.match(/디자인|마케팅|SCM|법무/)?.[0] ?? "디자인";
+      return {
+        conclusion: `${team}팀에 보낼 립오일 집중전 협업 요청 초안을 준비했습니다.`,
+        evidence: ["목적: 11월 립오일·플럼핑 집중전 실행", "산출물: PC/MO 배너와 CRM 소재", "요청 마감: 내일 15:00"],
+        impact: "생성하면 협업 요청 페이지에서 담당자와 상태를 계속 관리할 수 있습니다.",
+        actions: [{ label: `${team} 협업 요청 생성`, command: { type: "CREATE_COLLAB", title: "립오일 집중전 실행 협업", team, owner: "담당자 미정", dueAt: tomorrowAt(15), purpose: "립오일·플럼핑 성장 수요를 11월 행사로 연결", deliverable: team === "디자인" ? "PC/MO 배너 각 2종" : "실행안 및 결과 공유", reference: "립오일·플럼핑 집중전 기획안", requestText: "11월 립오일·플럼핑 집중전 실행을 위한 협업을 요청드립니다. 내일 15시까지 일정과 산출물 확인 부탁드립니다." }, resultMessage: `${team}팀 협업 요청을 생성했습니다.` }, { label: "협업 요청 보기", target: "/collaboration" }],
+      };
+    }
+
+    if (/(프로모션|기획전).*(추천|기획|만들|진행)/.test(question)) {
+      const promotion = data.promotions.find((item) => item.name.includes("립오일")) ?? data.promotions[0];
+      return {
+        conclusion: promotion ? `현재 신호에는 “${promotion.name}”이 가장 적합합니다.` : "립오일·플럼핑 집중전을 우선 기획하는 것이 좋습니다.",
+        evidence: ["립오일 검색 관심도 전년 대비 +109%", "플럼핑 니즈 +82%", "A 글로우 립오일 재고 9일"],
+        impact: "재고 가능일을 확인하면서 디자인·마케팅·SCM 협업을 함께 시작해야 합니다.",
+        actions: promotion ? [{ label: `${promotion.stage} → 다음 단계`, command: { type: "ADVANCE_PROMOTION", id: promotion.id }, resultMessage: `“${promotion.name}”을 다음 단계로 이동했습니다.` }, { label: "프로모션 보기", target: "/promotions" }] : [{ label: "프로모션 기획 보기", target: "/promotions" }],
+      };
+    }
+
+    if (/(일정|캘린더).*(충돌|겹|정리|보여)/.test(question)) {
+      const conflictDate = "10월 23일";
+      return {
+        conclusion: `${conflictDate}에 배너 시안 마감과 CRM 세팅 일정이 겹칩니다.`,
+        evidence: ["프로모션 배너 1차 시안 13:00–14:00", "CRM 세그먼트 최종 세팅 13:30–14:30", "30분 동시 진행"],
+        impact: "검수 담당자가 같다면 한 업무의 마감이 늦어질 수 있습니다.",
+        actions: [{ label: "일정 조정 업무 추가", command: { type: "ADD_TASK", title: "10월 23일 프로모션 일정 충돌 조정", category: "일정", priority: "HIGH", due: "오늘", reason: "배너 시안 마감과 CRM 세팅 시간이 30분 겹침" }, resultMessage: "일정 조정 업무를 오늘의 업무에 추가했습니다." }, { label: "캘린더 보기", target: "/calendar" }],
+      };
+    }
+
+    const namedInventory = data.inventory.find((inventory) => inventory.product?.name && question.includes(inventory.product.name));
+    if (/(재고|발주|입고|품절)/.test(question) || namedInventory) {
+      const item = namedInventory ?? data.inventory
+        .filter((inventory) => inventory.orderStatus !== "발주 완료" && inventory.recommendedOrderQty > 0)
+        .sort((a, b) => {
+          const status = { "발주 필요": 0, "주의": 1, "관찰": 2, "안정": 3, "과재고": 4 } as Record<string, number>;
+          return (status[a.status] ?? 9) - (status[b.status] ?? 9) || a.stockDays - b.stockDays;
+        })[0] ?? data.inventory[0];
       const order = item?.purchaseOrders?.[0];
       if (item?.orderStatus === "발주 완료" && order) {
         const arrival = new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric" }).format(new Date(order.expectedArrival));
         const overdue = new Date(order.expectedArrival) < new Date();
+        const productName = item.product?.name ?? "해당 상품";
         return {
-          conclusion: overdue ? `A 립밤 ${order.quantity.toLocaleString()}개 발주는 완료됐지만 ${arrival} 입고 예정일이 지나 실제 입고 여부 확인이 우선입니다.` : `A 립밤은 ${order.quantity.toLocaleString()}개 발주가 완료되어 추가 발주보다 입고 추적이 우선입니다.`,
+          conclusion: overdue ? `${productName} ${order.quantity.toLocaleString()}개 발주는 완료됐지만 ${arrival} 입고 예정일이 지나 실제 입고 여부 확인이 우선입니다.` : `${withTopic(productName)} ${order.quantity.toLocaleString()}개 발주가 완료되어 추가 발주보다 입고 추적이 우선입니다.`,
           evidence: [`발주 상태 ${order.status} · 입고 예정 ${arrival}`, `현재 재고 ${item.stockQty.toLocaleString()}개 · 일평균 판매 ${item.dailySales.toLocaleString()}개`, `현재 재고 ${item.stockDays}일분과 리드타임 ${item.leadTimeDays}일 사이 공백 가능성은 계속 관찰해야 합니다.`],
           impact: overdue ? "같은 발주를 다시 만들 필요는 없습니다. 입고 미반영인지 실제 지연인지 확인하고, 지연이면 품절 대응 일정을 조정해야 합니다." : "같은 발주를 다시 만들 필요는 없지만, 입고 전 품절 가능성이 남아 있어 공급사 일정 확인이 필요합니다.",
           actions: [{ label: "입고 추적 확인", target: "/inventory" }, { label: "캘린더 보기", target: "/calendar" }],
         };
       }
+      const productName = item?.product?.name ?? "재고 위험 상품";
+      const quantity = requestedQuantity(question, item?.recommendedOrderQty ?? 0);
       return {
-        conclusion: "A 립밤은 오늘 추가 발주 결정을 권장합니다.",
+        conclusion: `${withTopic(productName)} 오늘 추가 발주 결정을 권장합니다.`,
         evidence: [`현재 재고 ${item?.stockQty ?? 720}개 · 일평균 판매 ${item?.dailySales ?? 180}개`, `재고 ${item?.stockDays ?? 4}일분보다 리드타임 ${item?.leadTimeDays ?? 7}일이 깁니다.`, `안전재고를 포함한 권장 수량은 ${item?.recommendedOrderQty.toLocaleString() ?? "1,200"}개입니다.`],
-        impact: "현재 판매 속도가 유지되면 입고 전 약 3일간 품절 가능성이 있습니다.",
-        actions: [{ label: "발주 검토", target: "/inventory", taskTitle: "A 립밤 1,200개 발주 진행" }],
+        impact: `현재 판매 속도가 유지되면 입고 전 약 ${Math.max(0, (item?.leadTimeDays ?? 7) - (item?.stockDays ?? 4))}일간 품절 가능성이 있습니다.`,
+        actions: item && quantity > 0 ? [{ label: `${number(quantity)}개 발주 실행`, command: { type: "CREATE_ORDER", inventoryId: item.id, quantity }, resultMessage: `${productName} ${number(quantity)}개 발주와 입고 추적을 시작했습니다.` }, { label: "재고 근거 보기", target: "/inventory" }] : [{ label: "재고/발주 보기", target: "/inventory" }],
       };
     }
     if (/(립오일|트렌드|검색)/.test(question)) return {
       conclusion: "립오일은 단기 노이즈보다 지속 상승 신호에 가깝지만, 매입 확대 전 재고 회전 검증이 필요합니다.",
       evidence: ["검색 관심도가 전년 동기 대비 +109%", "7주 연속 상승, 월 검색량 48,200회", "30대 관심 비중 +8%p"],
-      impact: "자사 관련 SKU가 2개뿐이고 A 글로우 립오일 재고는 9일분입니다.",
-      actions: [{ label: "트렌드 상세", target: "/market" }, { label: "발주 업무 추가", target: "/tasks", taskTitle: "립오일 추가 발주 검토" }],
+      impact: `자사 립 SKU는 ${data.products.filter((product) => product.category === "립").length}개이고 A 글로우 립오일 재고는 9일분입니다.`,
+      actions: [{ label: "트렌드 상세", target: "/market" }, { label: "발주 업무 추가", command: { type: "ADD_TASK", title: "립오일 추가 발주 검토", category: "재고/발주", priority: "HIGH", due: "오늘", reason: "검색 관심도 7주 연속 상승과 재고 9일분을 함께 확인" }, resultMessage: "립오일 발주 검토 업무를 추가했습니다." }],
     };
     if (/(경쟁|B사|할인)/.test(question)) return {
       conclusion: "즉시 가격을 내리기보다 직접 경쟁 SKU 14개의 실구매가와 행사 중복 기간을 먼저 확인하세요.",
       evidence: ["B사 립 20% 할인", "자사 행사와 4일 겹침", "주 매출 영향 -680만원 추정"],
       impact: "대표 틴트는 자사가 경쟁사보다 2,100원 비쌉니다.",
-      actions: [{ label: "가격 비교", target: "/competitors" }, { label: "대응 업무 추가", target: "/tasks", taskTitle: "B사 립 할인 대응안 결정" }],
+      actions: [{ label: "가격 비교", target: "/competitors" }, { label: "대응 업무 추가", command: { type: "ADD_TASK", title: "B사 립 할인 대응안 결정", category: "경쟁사", priority: "HIGH", due: "오늘", reason: "자사 행사와 4일 겹치고 주 매출 -680만원 영향이 추정됨" }, resultMessage: "B사 할인 대응 업무를 추가했습니다." }],
     };
+    if (/(업무|할 일).*(추가|등록|만들)/.test(question)) {
+      const title = requestedTaskTitle(question);
+      return {
+        conclusion: `“${title}”을 오늘 업무로 추가할 수 있습니다.`,
+        evidence: ["사용자가 대화에서 직접 요청한 업무", "기본 우선순위: 중간", "기본 마감: 오늘"],
+        impact: "추가하면 오늘의 업무 목록과 홈의 미완료 업무 수에 즉시 반영됩니다.",
+        actions: [{ label: "오늘 업무에 추가", command: { type: "ADD_TASK", title, category: "AI Copilot", priority: "MEDIUM", due: "오늘", reason: "AI 대화에서 사용자가 직접 추가 요청" }, resultMessage: `“${title}”을 오늘 업무에 추가했습니다.` }, { label: "업무 목록 보기", target: "/tasks" }],
+      };
+    }
     if (/(작년|과거|뭐가 잘|지식)/.test(question)) {
       const terms = [...new Set(question.replace(/[^0-9A-Za-z가-힣\s]/g, " ").split(/\s+/).filter((term) => term.length >= 2))];
       const doc = data.knowledgeDocuments
@@ -205,7 +311,7 @@ export class MockAIProvider implements AIProvider {
     }
     if (/(매출|이번주|왜)/.test(question)) return {
       conclusion: "전체 매출은 증가했지만 메이크업 하락 요인을 별도로 관리해야 합니다.",
-      evidence: ["최근 30일 총 매출 12.4억원", "스킨케어 +4.2%p 기여", "메이크업 -1.5%p 기여"],
+      evidence: [`최근 30일 총 매출 ${(sales.revenue / 100000000).toFixed(1)}억원`, `직전 30일 대비 ${signedPercent(sales.revenueChangeRate)}`, "스킨케어 +4.2%p · 메이크업 -1.5%p 기여 추정"],
       impact: "경쟁사 할인과 립 구매전환율 하락이 같은 시기에 관찰됐으나 인과관계는 확정할 수 없습니다.",
       actions: [{ label: "매출 분석", target: "/sales" }],
     };

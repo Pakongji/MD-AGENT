@@ -9,7 +9,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import type { CopilotAnswer } from "@/lib/ai/provider";
 
 const nav = [
-  { href: "/", label: "홈", icon: Home, subtitle: "오늘 해야 할 일과 중요한 변화를 한눈에 확인하세요." },
+  { href: "/", label: "홈", icon: Home, subtitle: "대화만으로 조회·판단·실행까지 연결하세요." },
   { href: "/tasks", label: "오늘의 업무", icon: ClipboardCheck, subtitle: "AI와 함께 오늘 할 일을 정리하고 실행하세요." },
   { href: "/sales", label: "매출 분석", icon: ChartNoAxesCombined, subtitle: "매출 변화와 상품별 성과를 빠르게 확인하세요." },
   { href: "/market", label: "시장/트렌드", icon: TrendingUp, subtitle: "오늘의 시장 신호를 확인하고 더 깊게 검증하세요." },
@@ -26,7 +26,7 @@ const nav = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { data, load, command, loading, busy, toast, clearToast, showToast } = useAppStore();
+  const { data, load, command, loading, busy, toast, clearToast, showToast, recordAIConversation } = useAppStore();
   const [question, setQuestion] = useState("");
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotLoading, setCopilotLoading] = useState(false);
@@ -42,10 +42,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (loading) { showToast("업무 데이터를 불러온 뒤 질문해주세요.", "info"); return; }
     if (question.trim().length < 2) return;
     setCopilotOpen(true); setCopilotLoading(true); setAnswer(null);
-    const response = await fetch("/api/ai/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, page: pathname }) });
-    const payload = await response.json();
-    setCopilotLoading(false);
-    if (response.ok) setAnswer(payload.answer);
+    try {
+      const response = await fetch("/api/ai/copilot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, page: pathname }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "답변을 만들지 못했습니다.");
+      if (payload.conversation) recordAIConversation(payload.conversation);
+      setAnswer(payload.answer);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "답변을 만들지 못했습니다.", "error");
+    } finally {
+      setCopilotLoading(false);
+    }
+  }
+
+  async function runCopilotAction(action: CopilotAnswer["actions"][number]) {
+    if (action.command) {
+      await command(action.command as unknown as Record<string, unknown>);
+      return;
+    }
+    if (action.taskTitle) {
+      await command({ type: "ADD_TASK", title: action.taskTitle, category: "AI Copilot", priority: "HIGH", due: "오늘", reason: "Copilot 답변에서 생성" });
+      return;
+    }
+    if (action.target) {
+      setCopilotOpen(false);
+      router.push(action.target);
+    }
   }
 
   return <div className="app-shell">
@@ -62,7 +84,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="page-heading"><span className="eyebrow">MD Workspace</span><h1>{current.label}</h1><p>{current.subtitle}</p></div>
         <div className="topbar-actions">
           <label className="category-select"><span>담당 카테고리</span><select aria-label="담당 카테고리"><option>뷰티 전체</option><option>립 메이크업</option><option>스킨케어</option><option>베이스 메이크업</option></select></label>
-          <form className="copilot-input" onSubmit={(event) => { event.preventDefault(); void askCopilot(); }}><Bot size={17} /><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="AI에게 물어보세요" aria-label="AI Copilot 질문" /><button aria-label="AI에게 질문"><Search size={16} /></button></form>
+          {pathname !== "/" && <form className="copilot-input" onSubmit={(event) => { event.preventDefault(); void askCopilot(); }}><Bot size={17} /><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="AI에게 물어보세요" aria-label="AI Copilot 질문" /><button aria-label="AI에게 질문"><Search size={16} /></button></form>}
           <button className="notification-button" aria-label={`알림 ${unread}개`} onClick={() => { setNotificationsOpen(!notificationsOpen); if (unread) void command({ type: "READ_NOTIFICATIONS" }); }}><Bell size={18} />{unread > 0 && <span>{unread}</span>}</button>
           <div className="profile"><span>김</span><div><strong>김민지</strong><small>Beauty MD</small></div></div>
         </div>
@@ -79,7 +101,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div><span className="answer-label">근거</span><ul>{answer.evidence.map((item) => <li key={item}>{item}</li>)}</ul></div>
         <div><span className="answer-label">자사 영향</span><p>{answer.impact}</p></div>
         {answer.sources?.length ? <div className="source-box"><span>근거 문서</span>{answer.sources.map((source) => <strong key={source}>{source}</strong>)}</div> : null}
-        <div className="modal-actions">{answer.actions.map((action) => <Button key={action.label} variant={action.taskTitle ? "purple" : "secondary"} onClick={async () => { if (action.taskTitle) await command({ type: "ADD_TASK", title: action.taskTitle, category: "AI Copilot", priority: "HIGH", due: "오늘", reason: "Copilot 답변에서 생성" }); else { setCopilotOpen(false); router.push(action.target); } }}>{action.label}</Button>)}</div>
+        <div className="modal-actions">{answer.actions.map((action) => <Button key={action.label} variant={action.command || action.taskTitle ? "purple" : "secondary"} onClick={() => void runCopilotAction(action)}>{action.label}</Button>)}</div>
       </div>}
     </Modal>
     <Modal open={resetOpen} title="데모 데이터 초기화" onClose={() => setResetOpen(false)} width="460px"><p>지금까지 추가·수정한 데모 데이터가 모두 초기 상태로 돌아갑니다.</p><div className="modal-actions"><Button variant="secondary" onClick={() => setResetOpen(false)}>취소</Button><Button variant="danger" disabled={busy} onClick={async () => { if (await command({ type: "RESET_DEMO" })) setResetOpen(false); }}>초기화</Button></div></Modal>

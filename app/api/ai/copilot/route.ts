@@ -11,8 +11,8 @@ export async function POST(request: Request) {
     const input = bodySchema.parse(await request.json());
     const provider = getAIProvider();
     const answer = await provider.answer(input.question, input.page, await getDashboardData());
-    await prisma.aIConversation.create({ data: { question: input.question, answer: JSON.stringify(answer), context: input.page } });
-    return NextResponse.json({ provider: provider.name, answer });
+    const conversation = await prisma.aIConversation.create({ data: { question: input.question, answer: JSON.stringify(answer), context: input.page } });
+    return NextResponse.json({ provider: provider.name, answer, conversation });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "질문을 2자 이상 입력해주세요." }, { status: 400 });
     console.error(error);

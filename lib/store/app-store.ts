@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { DashboardData } from "@/lib/types/domain";
+import type { AIConversationItem, DashboardData } from "@/lib/types/domain";
 import { EMPTY_DASHBOARD } from "@/lib/types/domain";
 
 type ToastTone = "success" | "error" | "info";
@@ -14,6 +14,7 @@ interface AppState {
   toast: { message: string; tone: ToastTone } | null;
   load: () => Promise<void>;
   command: (command: Record<string, unknown>) => Promise<boolean>;
+  recordAIConversation: (conversation: AIConversationItem) => void;
   showToast: (message: string, tone?: ToastTone) => void;
   clearToast: () => void;
 }
@@ -51,6 +52,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       return false;
     }
   },
+  recordAIConversation: (conversation) => set((state) => ({
+    data: {
+      ...state.data,
+      aiConversations: [conversation, ...state.data.aiConversations.filter((item) => item.id !== conversation.id)].slice(0, 12),
+    },
+  })),
   showToast: (message, tone = "info") => {
     set({ toast: { message, tone } });
     window.setTimeout(() => get().clearToast(), 2600);

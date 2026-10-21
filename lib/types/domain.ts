@@ -161,6 +161,14 @@ export interface MarketKeywordItem {
   weeklySeries: string;
 }
 
+export interface AIConversationItem {
+  id: string;
+  question: string;
+  answer: string;
+  context: string;
+  createdAt: string;
+}
+
 export interface DashboardData {
   tasks: TaskItem[];
   products: ProductItem[];
@@ -178,9 +186,10 @@ export interface DashboardData {
   insights: Array<{ id: string; type: string; title: string; interpretation: string; impact: string; evidence: string; actionLabel: string; actionTarget: string; severity: string }>;
   notifications: Array<{ id: string; title: string; detail: string; read: boolean; target: string }>;
   salesMetrics: Array<{ id: string; date: string; category: string; revenue: number; orders: number; visitors: number }>;
+  aiConversations: AIConversationItem[];
   meta: { aiProvider: string; lastUpdated: string };
 }
 
 export const EMPTY_DASHBOARD: DashboardData = {
-  tasks: [], products: [], inventory: [], purchaseOrders: [], marketKeywords: [], marketTrends: [], articles: [], competitorEvents: [], promotions: [], calendarEvents: [], collaborationRequests: [], performanceReports: [], knowledgeDocuments: [], insights: [], notifications: [], salesMetrics: [], meta: { aiProvider: "mock", lastUpdated: "" },
+  tasks: [], products: [], inventory: [], purchaseOrders: [], marketKeywords: [], marketTrends: [], articles: [], competitorEvents: [], promotions: [], calendarEvents: [], collaborationRequests: [], performanceReports: [], knowledgeDocuments: [], insights: [], notifications: [], salesMetrics: [], aiConversations: [], meta: { aiProvider: "mock", lastUpdated: "" },
 };

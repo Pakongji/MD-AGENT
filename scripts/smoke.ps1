@@ -20,6 +20,13 @@ try {
   Assert-True (($plan.result.goals[0].tasks | Where-Object source -eq "AI_INFERRED").Count -ge 5) "task planner adds prerequisite and follow-up tasks"
   Assert-True (($plan.result.goals[1].tasks | Where-Object due -eq "오늘 15:00").Count -eq 1) "task planner preserves the second deadline"
 
+  $inventoryChat = Invoke-Post "/api/ai/copilot" @{ question = "지금 발주가 필요한 재고 위험 상품 알려줘"; page = "/" }
+  Assert-True ($inventoryChat.answer.conclusion -Match "A 립밤|E 볼륨 립플럼퍼") "AI home selects an unplaced inventory risk"
+  Assert-True ($inventoryChat.answer.actions[0].command.type -eq "CREATE_ORDER") "AI home returns an executable order command"
+
+  $reportChat = Invoke-Post "/api/ai/copilot" @{ question = "이번 달 성과 리포트 만들어줘"; page = "/" }
+  Assert-True ($reportChat.answer.actions[0].command.type -eq "GENERATE_REPORT") "AI home returns an executable report command"
+
   $selected = @($plan.result.goals[0].tasks[0], $plan.result.goals[0].tasks[3], $plan.result.goals[0].tasks[4])
   $afterTasks = Invoke-Post "/api/command" @{ type = "ADD_TASKS"; goal = $plan.result.goals[0].goal; goalReason = $plan.result.goals[0].reason; tasks = $selected }
   Assert-True ($afterTasks.data.tasks.Count -eq ($initial.tasks.Count + 3)) "selected planned tasks persist to SQLite"
