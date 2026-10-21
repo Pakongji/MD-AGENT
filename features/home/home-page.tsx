@@ -2,8 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowRight, Bot, CalendarDays, PackageX, ShoppingBag, Sparkles, TrendingUp, Users } from "lucide-react";
-import { Badge, Button, Card, DataBoundary, Metric, SectionTitle } from "@/components/common/ui";
+import { Badge, Button, Card, compactMoney, DataBoundary, Metric, money, SectionTitle } from "@/components/common/ui";
 import { TaskRow } from "@/components/common/task-row";
+import { getSalesSnapshot, signedPercent } from "@/lib/services/dashboard-metrics";
 import { useAppStore } from "@/lib/store/app-store";
 
 const insightIcon = { INVENTORY: PackageX, MARKET: TrendingUp, COMPETITOR: Users } as const;
@@ -11,6 +12,7 @@ const insightIcon = { INVENTORY: PackageX, MARKET: TrendingUp, COMPETITOR: Users
 export function HomePage() {
   const router = useRouter();
   const { data, command, busy } = useAppStore();
+  const sales = getSalesSnapshot(data.salesMetrics);
   const openTasks = data.tasks.filter((task) => task.status !== "완료");
   const inventory = data.inventory.find((item) => item.product?.name === "A 립밤");
   const order = inventory?.purchaseOrders?.[0];
@@ -23,10 +25,10 @@ export function HomePage() {
   return <DataBoundary><div className="stack">
     <div className="flow-strip" aria-label="MD 업무 흐름"><span>데이터</span><span>변화</span><span>AI 해석</span><span>자사 영향</span><span>MD 판단</span><span>실행</span></div>
     <div className="grid-4">
-      <Metric label="현재 매출" value="12.4억원" delta="전월 대비 +8.4%" tone="up" />
-      <Metric label="월 목표 달성률" value="78%" delta="계획 대비 +6%p" tone="good" />
-      <Metric label="일 방문자 수" value="18,420명" delta="전주 같은 요일 대비 +5.1%" tone="up" />
-      <Metric label="객단가" value="38,500원" delta="전월 대비 +7.8%" tone="up" />
+      <Metric label={`최근 ${sales.periodDays}일 매출`} value={compactMoney(sales.revenue)} delta={`직전 ${sales.periodDays}일 대비 ${signedPercent(sales.revenueChangeRate)}`} tone={sales.revenueChangeRate >= 0 ? "up" : "down"} />
+      <Metric label="월 목표 달성률" value={`${sales.achievementRate.toFixed(1)}%`} delta="월 목표 15.2억원 기준" tone={sales.achievementRate >= 75 ? "good" : "neutral"} />
+      <Metric label="일평균 방문자" value={`${money(sales.averageDailyVisitors)}명`} delta={`직전 ${sales.periodDays}일 대비 ${signedPercent(sales.visitorsChangeRate)}`} tone={sales.visitorsChangeRate >= 0 ? "up" : "down"} />
+      <Metric label="객단가" value={`${money(sales.averageOrderValue)}원`} delta={`직전 ${sales.periodDays}일 대비 ${signedPercent(sales.averageOrderValueChangeRate)}`} tone={sales.averageOrderValueChangeRate >= 0 ? "up" : "down"} />
     </div>
     <div className="grid-main-side">
       <Card>

@@ -48,7 +48,7 @@ export interface ProductItem {
   salesQty: number;
   marginRate: number;
   risk: string;
-  brand: { name: string };
+  brand: { name: string; status: string };
   inventory?: InventoryItem | null;
 }
 

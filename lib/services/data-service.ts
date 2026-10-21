@@ -4,7 +4,7 @@ import type { DashboardData } from "@/lib/types/domain";
 export async function getDashboardData() {
   const [tasks, products, inventory, purchaseOrders, marketKeywords, marketTrends, articles, competitorEvents, promotions, calendarEvents, collaborationRequests, performanceReports, knowledgeDocuments, insights, notifications, salesMetrics] = await Promise.all([
     prisma.task.findMany({ include: { group: { select: { goal: true } } }, orderBy: [{ status: "desc" }, { dueAt: "asc" }, { createdAt: "desc" }] }),
-    prisma.product.findMany({ include: { brand: { select: { name: true } }, inventory: true }, orderBy: { revenue: "desc" } }),
+    prisma.product.findMany({ include: { brand: { select: { name: true, status: true } }, inventory: true }, orderBy: { revenue: "desc" } }),
     prisma.inventory.findMany({ include: { product: { select: { name: true, category: true } }, purchaseOrders: { orderBy: { createdAt: "desc" } } }, orderBy: { stockDays: "asc" } }),
     prisma.purchaseOrder.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.marketKeyword.findMany({ orderBy: { currentIndex: "desc" } }),
