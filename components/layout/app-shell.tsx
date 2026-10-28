@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Bell, Bot, Boxes, CalendarDays, ChartNoAxesCombined, ChevronRight, ClipboardCheck, Handshake, Home, Library, PackageSearch, RotateCcw, Search, Sparkles, Tag, TrendingUp, Users, X } from "lucide-react";
+import { SessionProvider, signOut, useSession } from "next-auth/react";
+import { Bell, Bot, Boxes, CalendarDays, ChartNoAxesCombined, ChevronRight, ClipboardCheck, Handshake, Home, Library, LogOut, PackageSearch, RotateCcw, Search, Sparkles, Tag, TrendingUp, Users, X } from "lucide-react";
 import { Button, Modal } from "@/components/common/ui";
 import { useAppStore } from "@/lib/store/app-store";
 import type { CopilotAnswer } from "@/lib/ai/provider";
@@ -25,7 +26,14 @@ const nav = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  if (pathname === "/login") return <>{children}</>;
+  return <SessionProvider><AuthenticatedAppShell>{children}</AuthenticatedAppShell></SessionProvider>;
+}
+
+function AuthenticatedAppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const router = useRouter();
+  const { data: session } = useSession();
   const { data, load, command, loading, busy, toast, clearToast, showToast, recordAIConversation } = useAppStore();
   const [question, setQuestion] = useState("");
   const [copilotOpen, setCopilotOpen] = useState(false);
@@ -36,7 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const current = nav.find((item) => item.href === pathname) || nav[0];
   const unread = data.notifications.filter((item) => !item.read).length;
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (pathname !== "/login") void load(); }, [load, pathname]);
 
   async function askCopilot() {
     if (loading) { showToast("업무 데이터를 불러온 뒤 질문해주세요.", "info"); return; }
@@ -86,7 +94,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <label className="category-select"><span>담당 카테고리</span><select aria-label="담당 카테고리"><option>뷰티 전체</option><option>립 메이크업</option><option>스킨케어</option><option>베이스 메이크업</option></select></label>
           {pathname !== "/" && <form className="copilot-input" onSubmit={(event) => { event.preventDefault(); void askCopilot(); }}><Bot size={17} /><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="AI에게 물어보세요" aria-label="AI Copilot 질문" /><button aria-label="AI에게 질문"><Search size={16} /></button></form>}
           <button className="notification-button" aria-label={`알림 ${unread}개`} onClick={() => { setNotificationsOpen(!notificationsOpen); if (unread) void command({ type: "READ_NOTIFICATIONS" }); }}><Bell size={18} />{unread > 0 && <span>{unread}</span>}</button>
-          <div className="profile"><span>김</span><div><strong>김민지</strong><small>Beauty MD</small></div></div>
+          <div className="profile"><span>{session?.user?.name?.slice(0, 1) || "M"}</span><div><strong>{session?.user?.name || session?.user?.email || "로그인 사용자"}</strong><small>GitHub 계정</small></div><button className="logout-button" onClick={() => void signOut({ redirectTo: "/login" })} aria-label="로그아웃" title="로그아웃"><LogOut size={15} /></button></div>
         </div>
       </header>
       {notificationsOpen && <div className="notification-popover"><div className="popover-title"><strong>알림</strong><button onClick={() => setNotificationsOpen(false)} aria-label="알림 닫기"><X size={16} /></button></div>{data.notifications.map((item) => <button key={item.id} onClick={() => { setNotificationsOpen(false); router.push(item.target); }}><strong>{item.title}</strong><span>{item.detail}</span></button>)}</div>}

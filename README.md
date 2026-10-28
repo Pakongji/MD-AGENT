@@ -22,6 +22,18 @@ pnpm dev
 
 브라우저에서 [http://localhost:3000](http://localhost:3000)을 엽니다.
 
+### 계정 로그인 설정
+
+로그인 페이지에서 이메일·비밀번호 계정을 만들 수 있습니다. 비밀번호는 scrypt로 해시해 저장하며, 로그인 계정은 업무 데이터와 별도 테이블에 보관됩니다.
+
+프로덕션에서는 `AUTH_SECRET` 환경변수를 설정하세요. 충분히 무작위인 값을 생성하려면 다음 명령을 실행할 수 있습니다.
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+```
+
+GitHub는 코드 저장소로 연결되어 있으며 앱의 업무 데이터 저장소는 Prisma DB입니다. 가입 계정은 현재 공용 MD 워크스페이스 데이터를 함께 사용합니다.
+
 macOS/Linux에서는 환경 파일 복사만 아래처럼 실행하면 됩니다.
 
 ```bash
