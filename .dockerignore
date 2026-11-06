@@ -2,7 +2,10 @@
 .next
 .pnpm-store
 node_modules
+generated
 .env
+.env.*
+!.env.example
 prisma/dev.db
 prisma/dev.db-journal
 data

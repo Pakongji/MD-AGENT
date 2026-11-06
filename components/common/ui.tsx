@@ -33,6 +33,7 @@ export function Metric({ label, value, delta, tone = "neutral" }: { label: strin
 
 export function Modal({ open, title, children, onClose, width = "680px" }: { open: boolean; title: string; children: ReactNode; onClose: () => void; width?: string }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => {
@@ -44,7 +45,13 @@ export function Modal({ open, title, children, onClose, width = "680px" }: { ope
   }, [open]);
   if (!open) return null;
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}>
-    <div className="modal" role="dialog" aria-modal="true" aria-label={title} style={{ maxWidth: width }}>
+    <div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-label={title} style={{ maxWidth: width }} onKeyDown={(event) => {
+      if (event.key !== "Tab") return;
+      const elements = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href], [tabindex="0"]') ?? []).filter((element) => element.getClientRects().length > 0);
+      const first = elements[0], last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }}>
       <div className="modal-header"><h2>{title}</h2><button ref={closeRef} className="icon-button" onClick={onClose} aria-label="닫기"><X size={18} /></button></div>
       <div className="modal-body">{children}</div>
     </div>
@@ -53,7 +60,7 @@ export function Modal({ open, title, children, onClose, width = "680px" }: { ope
 
 export function DataBoundary({ children }: { children: ReactNode }) {
   const { loading, error, load } = useAppStore();
-  if (loading) return <div className="state-box"><LoaderCircle className="spin" /><strong>업무 데이터를 불러오는 중입니다</strong><span>SQLite 데모 데이터를 확인하고 있어요.</span></div>;
+  if (loading) return <div className="state-box"><LoaderCircle className="spin" /><strong>업무 데이터를 불러오는 중입니다</strong><span>저장된 업무와 결정 기록을 확인하고 있어요.</span></div>;
   if (error) return <div className="state-box state-error"><strong>데이터를 불러오지 못했습니다</strong><span>{error}</span><Button onClick={() => void load()}>다시 시도</Button></div>;
   return <>{children}</>;
 }

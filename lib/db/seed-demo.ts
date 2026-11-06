@@ -1,5 +1,6 @@
-import type { PrismaClient } from "@/generated/prisma";
+import type { Prisma, PrismaClient } from "@/generated/prisma";
 import { demoData, salesSeries } from "@/lib/mock/data";
+import { suggestsDecision } from "@/lib/decisions/shared";
 
 export async function seedDemoData(prisma: PrismaClient) {
   await prisma.$transaction([
@@ -12,6 +13,10 @@ export async function seedDemoData(prisma: PrismaClient) {
     prisma.salesMetric.deleteMany(), prisma.task.deleteMany(), prisma.taskGroup.deleteMany(), prisma.user.deleteMany(),
   ]);
 
+  await insertDemoData(prisma);
+}
+
+async function insertDemoData(prisma: Prisma.TransactionClient) {
   await prisma.user.create({ data: demoData.user });
   const groupIds = new Map<string, string>();
   for (const group of demoData.taskGroups) {
@@ -20,7 +25,7 @@ export async function seedDemoData(prisma: PrismaClient) {
   }
   for (const task of demoData.tasks) {
     const { groupKey, ...data } = task;
-    await prisma.task.create({ data: { ...data, groupId: groupKey ? groupIds.get(groupKey) : undefined } });
+    await prisma.task.create({ data: { ...data, requiresDecision: suggestsDecision(data.title), groupId: groupKey ? groupIds.get(groupKey) : undefined } });
   }
   await prisma.salesMetric.createMany({ data: salesSeries });
 
@@ -38,6 +43,10 @@ export async function seedDemoData(prisma: PrismaClient) {
   for (const item of demoData.inventory) {
     const { productKey, ...data } = item;
     await prisma.inventory.create({ data: { ...data, productId: productIds.get(productKey)! } });
+  }
+  for (const product of demoData.products) {
+    const inventory = await prisma.inventory.findUnique({ where: { productId: productIds.get(product.key)! } });
+    if (inventory) await prisma.task.updateMany({ where: { requiresDecision: true, category: "재고/발주", title: { contains: product.name } }, data: { inventoryId: inventory.id } });
   }
   await prisma.marketKeyword.createMany({ data: demoData.marketKeywords });
   await prisma.marketTrend.createMany({ data: demoData.marketTrends });
@@ -59,4 +68,22 @@ export async function seedDemoData(prisma: PrismaClient) {
   await prisma.knowledgeDocument.createMany({ data: demoData.knowledge });
   await prisma.insight.createMany({ data: demoData.insights });
   await prisma.notification.createMany({ data: demoData.notifications });
+}
+
+/** Add the existing demo to an empty workspace without touching accounts or conversations. */
+export async function addDemoDataIfEmpty(prisma: PrismaClient) {
+  return prisma.$transaction(async (tx) => {
+    const counts = await Promise.all([
+      tx.user.count(), tx.taskGroup.count(), tx.task.count(), tx.salesMetric.count(),
+      tx.brand.count(), tx.product.count(), tx.inventory.count(), tx.purchaseOrder.count(),
+      tx.marketKeyword.count(), tx.marketTrend.count(), tx.article.count(), tx.articleFeedback.count(),
+      tx.competitor.count(), tx.competitorEvent.count(), tx.promotion.count(), tx.calendarEvent.count(),
+      tx.collaborationRequest.count(), tx.performanceReport.count(), tx.knowledgeDocument.count(),
+      tx.insight.count(), tx.notification.count(),
+    ]);
+    if (counts.some((count) => count > 0)) return false;
+
+    await insertDemoData(tx);
+    return true;
+  }, { isolationLevel: "Serializable", maxWait: 10000, timeout: 60000 });
 }

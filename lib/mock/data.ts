@@ -123,16 +123,16 @@ export const demoData = {
     { title: "클렌징 재고 소진 회고", type: "의사결정", content: "할인율을 높인 단품 행사보다 클렌저와 클렌징밤을 묶은 루틴 세트가 마진 방어와 재고 소진에 더 유리했습니다.", source: "MD 의사결정 기록", tags: "클렌징,재고,세트" },
   ],
   insights: [
-    { type: "INVENTORY", title: "A 립밤 입고 전 품절 가능성", interpretation: "현재 판매 속도가 유지되면 4일 뒤 재고가 소진될 수 있습니다.", impact: "리드타임 7일로 예상 품절일보다 입고가 늦습니다.", evidence: "재고 720개 · 일평균 판매 180개 · 안전재고 540개", actionLabel: "발주 검토", actionTarget: "/inventory", severity: "CRITICAL" },
+    { type: "INVENTORY", title: "A 립밤 입고 전 품절 가능성", interpretation: "현재 판매 속도가 유지되면 4일 뒤 재고가 소진될 수 있습니다.", impact: "리드타임 7일로 예상 품절일보다 입고가 늦습니다.", evidence: "재고 720개 · 일평균 판매 180개 · 안전재고 540개", actionLabel: "발주 검토", actionTarget: "/sales?tab=inventory", severity: "CRITICAL" },
     { type: "MARKET", title: "립오일 검색 관심 증가", interpretation: "단기 이슈보다 7주 연속 상승 흐름이 관찰됩니다.", impact: "자사 관련 SKU가 3개뿐이라 구색 확대 기회가 있습니다.", evidence: "검색 관심도 전년 대비 +109% · 월 검색량 48,200회", actionLabel: "상세 분석", actionTarget: "/market", severity: "HIGH" },
-    { type: "COMPETITOR", title: "B사 립 20% 할인 시작", interpretation: "자사 립 기획전과 행사 기간이 일부 겹칩니다.", impact: "직접 경쟁 SKU 14개의 주 매출 영향은 -680만원으로 추정됩니다.", evidence: "대표 상품 실구매가 자사 18,000원 · 경쟁사 15,900원", actionLabel: "대응안 보기", actionTarget: "/competitors", severity: "HIGH" },
-    { type: "INVENTORY", title: "F 헤어마스크 재고 52일", interpretation: "최근 판매 속도 기준으로 두 달 가까운 재고가 남아 있습니다.", impact: "추가 발주보다 기존 재고 소진이 우선입니다.", evidence: "재고 1,352개 · 일평균 판매 26개 · 검색 관심도 하락", actionLabel: "소진안 검토", actionTarget: "/inventory", severity: "MEDIUM" },
+    { type: "COMPETITOR", title: "B사 립 20% 할인 시작", interpretation: "자사 립 기획전과 행사 기간이 일부 겹칩니다.", impact: "직접 경쟁 SKU 14개의 주 매출 영향은 -680만원으로 추정됩니다.", evidence: "대표 상품 실구매가 자사 18,000원 · 경쟁사 15,900원", actionLabel: "대응안 보기", actionTarget: "/market?tab=competitors", severity: "HIGH" },
+    { type: "INVENTORY", title: "F 헤어마스크 재고 52일", interpretation: "최근 판매 속도 기준으로 두 달 가까운 재고가 남아 있습니다.", impact: "추가 발주보다 기존 재고 소진이 우선입니다.", evidence: "재고 1,352개 · 일평균 판매 26개 · 검색 관심도 하락", actionLabel: "소진안 검토", actionTarget: "/sales?tab=inventory", severity: "MEDIUM" },
   ],
   notifications: [
-    { title: "A 립밤 재고 경고", detail: "재고가 4일분 남았습니다.", target: "/inventory" },
-    { title: "경쟁사 할인 감지", detail: "B사 립 카테고리 20% 할인이 시작됐습니다.", target: "/competitors" },
+    { title: "A 립밤 재고 경고", detail: "재고가 4일분 남았습니다.", target: "/sales?tab=inventory" },
+    { title: "경쟁사 할인 감지", detail: "B사 립 카테고리 20% 할인이 시작됐습니다.", target: "/market?tab=competitors" },
     { title: "오늘 발주 마감", detail: "14:00까지 A 립밤 발주 여부를 결정해야 합니다.", target: "/tasks" },
-    { title: "일정 충돌 감지", detail: "10/23 배너 시안과 CRM 세팅 시간이 겹칩니다.", target: "/calendar" },
+    { title: "일정 충돌 감지", detail: "10/23 배너 시안과 CRM 세팅 시간이 겹칩니다.", target: "/tasks?tab=calendar" },
   ],
 };
 

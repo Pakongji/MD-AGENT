@@ -11,6 +11,7 @@ export interface TaskPlanTask {
   source: TaskSource;
   reason: string;
   selected?: boolean;
+  requiresDecision?: boolean;
 }
 
 export interface TaskPlanGoal {
@@ -37,6 +38,27 @@ export interface TaskItem {
   reason: string;
   groupId?: string | null;
   group?: { goal: string } | null;
+  requiresDecision: boolean;
+  inventoryId: string | null;
+  decisions: TaskDecisionItem[];
+}
+
+export type DecisionOutcome = "PROCEED" | "HOLD" | "DECLINE";
+export interface DecisionEvidence {
+  capturedAt: string;
+  taskTitle: string;
+  taskReason: string;
+  inventory?: {
+    id: string; productName: string; stockQty: number; dailySales: number;
+    stockDays: number; leadTimeDays: number; safetyStock: number; recommendedOrderQty: number;
+  };
+}
+export interface TaskDecisionItem {
+  id: string; taskId: string; authorId: string; authorName: string;
+  status: "DRAFT" | "CONFIRMED"; outcome: DecisionOutcome;
+  content: string; rationale: string; alternatives: string; followUp: string;
+  reviewAt: string | null; quantity: number | null; evidence: DecisionEvidence;
+  confirmedAt: string | null; createdAt: string; updatedAt: string;
 }
 
 export interface ProductItem {
@@ -66,6 +88,7 @@ export interface InventoryItem {
   orderStatus: string;
   product?: { name: string; category: string };
   purchaseOrders?: PurchaseOrderItem[];
+  updatedAt?: string;
 }
 
 export interface PurchaseOrderItem {
@@ -187,7 +210,7 @@ export interface DashboardData {
   notifications: Array<{ id: string; title: string; detail: string; read: boolean; target: string }>;
   salesMetrics: Array<{ id: string; date: string; category: string; revenue: number; orders: number; visitors: number }>;
   aiConversations: AIConversationItem[];
-  meta: { aiProvider: string; lastUpdated: string };
+  meta: { aiProvider: string; lastUpdated: string; viewerId?: string };
 }
 
 export const EMPTY_DASHBOARD: DashboardData = {

@@ -6,9 +6,10 @@ import { Badge, Button, Card, DataBoundary, EmptyState, Modal, SectionTitle } fr
 import { TaskRow } from "@/components/common/task-row";
 import { useAppStore } from "@/lib/store/app-store";
 import type { TaskItem, TaskPlanResult } from "@/lib/types/domain";
+import { latestConfirmed, suggestsDecision } from "@/lib/decisions/shared";
 
 export function TasksPage() {
-  const { data, command, busy, showToast } = useAppStore();
+  const { data, command, busy, showToast, openDecision } = useAppStore();
   const [input, setInput] = useState("");
   const [planning, setPlanning] = useState(false);
   const [plan, setPlan] = useState<TaskPlanResult | null>(null);
@@ -18,6 +19,7 @@ export function TasksPage() {
   const [manualOpen, setManualOpen] = useState(false);
   const [manualTitle, setManualTitle] = useState("");
   const [manualCategory, setManualCategory] = useState("일반");
+  const [manualRequiresDecision, setManualRequiresDecision] = useState(false);
   const visibleTasks = useMemo(() => data.tasks.filter((task) => filter === "전체" || task.status === filter), [data.tasks, filter]);
 
   async function makePlan() {
@@ -67,12 +69,20 @@ export function TasksPage() {
       <SectionTitle title="오늘의 업무" description={`전체 ${data.tasks.length}건`} action={<div className="filters"><select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="업무 상태 필터"><option>전체</option><option>대기</option><option>진행중</option><option>완료</option></select></div>} />
       {visibleTasks.length ? visibleTasks.map((task) => <TaskRow key={task.id} task={task} onToggle={() => void command({ type: "TOGGLE_TASK", id: task.id })} onEdit={() => setEditTask(task)} />) : <EmptyState title="조건에 맞는 업무가 없습니다" description="필터를 바꾸거나 새 업무를 추가해보세요." />}
     </Card>
-    <Modal open={Boolean(editTask)} title="업무 수정" onClose={() => setEditTask(null)} width="500px">{editTask && <TaskEditForm task={editTask} onCancel={() => setEditTask(null)} onSave={async (value) => { if (await command({ type: "UPDATE_TASK", id: editTask.id, ...value })) setEditTask(null); }} />}</Modal>
-    <Modal open={manualOpen} title="업무 직접 추가" onClose={() => setManualOpen(false)} width="500px"><div className="field"><label htmlFor="manual-task-title">업무명</label><input id="manual-task-title" value={manualTitle} onChange={(event) => setManualTitle(event.target.value)} /></div><div className="field" style={{ marginTop: 12 }}><label htmlFor="manual-task-category">카테고리</label><select id="manual-task-category" value={manualCategory} onChange={(event) => setManualCategory(event.target.value)}><option>일반</option><option>재고/발주</option><option>프로모션</option><option>경쟁사</option><option>협업 요청</option><option>성과</option></select></div><div className="modal-actions"><Button variant="secondary" onClick={() => setManualOpen(false)}>취소</Button><Button disabled={!manualTitle.trim() || busy} onClick={async () => { if (await command({ type: "ADD_TASK", title: manualTitle, category: manualCategory, priority: "MEDIUM", due: "오늘", reason: "사용자가 직접 추가" })) { setManualOpen(false); setManualTitle(""); } }}>추가</Button></div></Modal>
+    <Modal open={Boolean(editTask)} title="업무 수정" onClose={() => setEditTask(null)} width="500px">{editTask && <TaskEditForm task={editTask} onCancel={() => setEditTask(null)} onSave={async (value) => {
+      const needsRecord = value.status === "완료" && editTask.status !== "완료" && (editTask.requiresDecision || value.requiresDecision) && (!latestConfirmed(editTask) || latestConfirmed(editTask)?.outcome === "HOLD");
+      if (await command({ type: "UPDATE_TASK", id: editTask.id, ...value, status: needsRecord ? editTask.status : value.status })) {
+        setEditTask(null);
+        if (needsRecord) openDecision({ taskId: editTask.id });
+      }
+    }} />}</Modal>
+    <Modal open={manualOpen} title="업무 직접 추가" onClose={() => setManualOpen(false)} width="500px"><div className="field"><label htmlFor="manual-task-title">업무명</label><input id="manual-task-title" value={manualTitle} onChange={(event) => { setManualTitle(event.target.value); setManualRequiresDecision(suggestsDecision(event.target.value)); }} /></div><div className="field" style={{ marginTop: 12 }}><label htmlFor="manual-task-category">카테고리</label><select id="manual-task-category" value={manualCategory} onChange={(event) => setManualCategory(event.target.value)}><option>일반</option><option>재고/발주</option><option>프로모션</option><option>경쟁사</option><option>협업 요청</option><option>성과</option></select></div><label className="decision-checkbox"><input type="checkbox" checked={manualRequiresDecision} onChange={(event) => setManualRequiresDecision(event.target.checked)} />의사결정 기록이 필요한 업무</label><div className="modal-actions"><Button variant="secondary" onClick={() => setManualOpen(false)}>취소</Button><Button disabled={!manualTitle.trim() || busy} onClick={async () => { if (await command({ type: "ADD_TASK", title: manualTitle, category: manualCategory, priority: "MEDIUM", due: "오늘", reason: "사용자가 직접 추가", requiresDecision: manualRequiresDecision })) { setManualOpen(false); setManualTitle(""); setManualRequiresDecision(false); } }}>추가</Button></div></Modal>
   </div></DataBoundary>;
 }
 
-function TaskEditForm({ task, onCancel, onSave }: { task: TaskItem; onCancel: () => void; onSave: (value: { title: string; status: TaskItem["status"]; priority: TaskItem["priority"] }) => Promise<void> }) {
+function TaskEditForm({ task, onCancel, onSave }: { task: TaskItem; onCancel: () => void; onSave: (value: { title: string; status: TaskItem["status"]; priority: TaskItem["priority"]; requiresDecision: boolean }) => Promise<void> }) {
   const [title, setTitle] = useState(task.title); const [status, setStatus] = useState(task.status); const [priority, setPriority] = useState(task.priority);
-  return <><div className="field"><label htmlFor="edit-task-title">업무명</label><input id="edit-task-title" value={title} onChange={(event) => setTitle(event.target.value)} /></div><div className="form-grid" style={{ marginTop: 12 }}><div className="field"><label htmlFor="edit-task-status">상태</label><select id="edit-task-status" value={status} onChange={(event) => setStatus(event.target.value as TaskItem["status"])}><option>대기</option><option>진행중</option><option>완료</option></select></div><div className="field"><label htmlFor="edit-task-priority">우선순위</label><select id="edit-task-priority" value={priority} onChange={(event) => setPriority(event.target.value as TaskItem["priority"])}><option value="HIGH">높음</option><option value="MEDIUM">중간</option><option value="LOW">낮음</option></select></div></div><div className="modal-actions"><Button variant="secondary" onClick={onCancel}>취소</Button><Button disabled={!title.trim()} onClick={() => void onSave({ title, status, priority })}>저장</Button></div></>;
+  const [requiresDecision, setRequiresDecision] = useState(task.requiresDecision);
+  const needsRecord = status === "완료" && task.status !== "완료" && (requiresDecision || task.requiresDecision) && (!latestConfirmed(task) || latestConfirmed(task)?.outcome === "HOLD");
+  return <><div className="field"><label htmlFor="edit-task-title">업무명</label><input id="edit-task-title" value={title} onChange={(event) => setTitle(event.target.value)} /></div><div className="form-grid" style={{ marginTop: 12 }}><div className="field"><label htmlFor="edit-task-status">상태</label><select id="edit-task-status" value={status} onChange={(event) => setStatus(event.target.value as TaskItem["status"])}><option>대기</option><option>진행중</option><option>완료</option></select></div><div className="field"><label htmlFor="edit-task-priority">우선순위</label><select id="edit-task-priority" value={priority} onChange={(event) => setPriority(event.target.value as TaskItem["priority"])}><option value="HIGH">높음</option><option value="MEDIUM">중간</option><option value="LOW">낮음</option></select></div></div><label className="decision-checkbox"><input type="checkbox" checked={requiresDecision} onChange={(event) => setRequiresDecision(event.target.checked)} />의사결정 기록이 필요한 업무</label>{needsRecord && <p className="decision-notice">변경 사항을 저장한 뒤 결정 기록 창이 열립니다. 결정 내용과 근거를 확정하면 완료 처리됩니다.</p>}<div className="modal-actions"><Button variant="secondary" onClick={onCancel}>취소</Button><Button disabled={!title.trim()} onClick={() => void onSave({ title, status, priority, requiresDecision })}>{needsRecord ? "저장 후 결정 기록" : "저장"}</Button></div></>;
 }

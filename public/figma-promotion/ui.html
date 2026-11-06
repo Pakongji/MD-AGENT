@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<style>
+body { font: 13px/1.6 system-ui, sans-serif; margin: 16px; color: #151922; }
+button { padding: 8px 12px; border: 0; border-radius: 7px; background: #241d48; color: white; }
+button:disabled { opacity: .55; } #status { min-height: 24px; }
+</style>
+<h2>MD AGENT 기획안 가져오기</h2>
+<p>사이트에서 내려받은 확정 기획안 JSON을 선택하세요.</p>
+<input id="file" type="file" accept=".json,application/json" aria-label="확정 기획안 JSON">
+<p id="status" role="status"></p>
+<button id="generate" type="button" disabled>편집 가능한 프레임 만들기</button>
+<script>
+  const file = document.getElementById("file");
+  const status = document.getElementById("status");
+  const button = document.getElementById("generate");
+  file.onchange = () => { button.disabled = !file.files.length; status.textContent = ""; };
+  button.onclick = async () => {
+    button.disabled = true;
+    status.textContent = "기획안을 읽는 중입니다.";
+    try {
+      const item = file.files[0];
+      if (!item || item.size > 100000) throw new Error("100KB 이하의 기획안 JSON을 선택해주세요.");
+      const data = JSON.parse(await item.text());
+      parent.postMessage({ pluginMessage: { type: "create", data } }, "*");
+    } catch (error) {
+      status.textContent = error.message;
+      button.disabled = false;
+    }
+  };
+  window.onmessage = event => {
+    const message = event.data.pluginMessage;
+    if (!message || !["done", "error"].includes(message.type)) return;
+    status.textContent = message.text;
+    button.disabled = false;
+  };
+</script>
+</html>

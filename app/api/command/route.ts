@@ -3,7 +3,14 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { seedDemoData } from "@/lib/db/seed-demo";
 import { getDashboardData } from "@/lib/services/data-service";
+import { reportNextActions } from "@/lib/services/report-actions";
 import { commandSchema, type Command } from "@/lib/validation/commands";
+import { auth } from "@/auth";
+import { assertDatabaseEnvironment } from "@/lib/db/config";
+import { databaseErrorMessage, logDatabaseError } from "@/lib/db/errors";
+import { DecisionError, inventoryForTitle, requireTaskDecision, saveDecision, registerDecisionOrder } from "@/lib/decisions/service";
+import { suggestsDecision } from "@/lib/decisions/shared";
+import { dueForStorage, parseDueText } from "@/lib/utils/due";
 
 function todayAt(hour = 18) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -13,7 +20,7 @@ function todayAt(hour = 18) {
   return new Date(`${value.year}-${value.month}-${value.day}T${String(hour).padStart(2, "0")}:00:00+09:00`);
 }
 
-async function execute(command: Command) {
+async function execute(command: Command, actor: { id: string; name: string }) {
   switch (command.type) {
     case "ADD_TASKS": {
       const existing = await prisma.task.findMany({
@@ -24,46 +31,43 @@ async function execute(command: Command) {
       const tasks = command.tasks.filter((task) => !existingTitles.has(task.title));
       if (!tasks.length) return "같은 미완료 업무가 이미 등록되어 있습니다.";
       const group = await prisma.taskGroup.create({ data: { goal: command.goal, reason: command.goalReason } });
-      await prisma.task.createMany({ data: tasks.map((task) => ({
-        title: task.title, category: task.category, priority: task.priority, dueAt: todayAt(), dueLabel: task.due,
+      // "먼저"·"결정 전" 같은 단계 업무는 목표의 핵심 마감(사용자가 말한 마감)을 기준으로 둡니다.
+      const goalDue = command.tasks.filter((task) => task.source === "USER_INPUT").map((task) => parseDueText(task.due)).find(Boolean) ?? null;
+      await prisma.task.createMany({ data: await Promise.all(tasks.map(async (task) => ({
+        title: task.title, category: task.category, priority: task.priority, dueAt: parseDueText(task.due) ? dueForStorage(task.due) : goalDue ?? dueForStorage("오늘"), dueLabel: task.due,
         status: "대기", aiExecutable: task.aiExecutable, source: task.source, reason: task.reason, groupId: group.id,
-      })) });
+        requiresDecision: task.requiresDecision ?? suggestsDecision(task.title),
+        inventoryId: await inventoryForTitle(prisma, task.title),
+      }))) });
       return `${tasks.length}개 업무를 추가했습니다.${tasks.length < command.tasks.length ? " 이미 있는 업무는 제외했습니다." : ""}`;
     }
     case "ADD_TASK": {
       const existing = await prisma.task.findFirst({ where: { title: command.title, status: { not: "완료" } } });
       if (existing) return "같은 미완료 업무가 이미 등록되어 있습니다.";
-      await prisma.task.create({ data: { title: command.title, category: command.category, priority: command.priority, dueAt: todayAt(), dueLabel: command.due, reason: command.reason, source: "SYSTEM_SIGNAL" } });
+      await prisma.task.create({ data: { title: command.title, category: command.category, priority: command.priority, dueAt: dueForStorage(command.due), dueLabel: command.due, reason: command.reason, source: "SYSTEM_SIGNAL", requiresDecision: command.requiresDecision ?? suggestsDecision(command.title), inventoryId: await inventoryForTitle(prisma, command.title) } });
       return "오늘 업무에 추가했습니다.";
     }
     case "TOGGLE_TASK": {
       const task = await prisma.task.findUniqueOrThrow({ where: { id: command.id } });
+      if (task.status !== "완료") await requireTaskDecision(prisma, task.id);
       await prisma.task.update({ where: { id: command.id }, data: { status: task.status === "완료" ? "진행중" : "완료" } });
       return task.status === "완료" ? "업무를 다시 진행중으로 바꿨습니다." : "업무를 완료했습니다.";
     }
-    case "UPDATE_TASK":
-      await prisma.task.update({ where: { id: command.id }, data: { title: command.title, status: command.status, priority: command.priority } });
+    case "UPDATE_TASK": {
+      const task = await prisma.task.findUniqueOrThrow({ where: { id: command.id } });
+      if (command.status === "완료" && task.status !== "완료") await requireTaskDecision(prisma, task.id, command.requiresDecision);
+      await prisma.task.update({ where: { id: command.id }, data: { title: command.title, status: command.status, priority: command.priority, requiresDecision: command.requiresDecision, inventoryId: task.inventoryId ?? await inventoryForTitle(prisma, command.title) } });
       return "업무를 수정했습니다.";
-    case "CREATE_ORDER": {
-      const inventory = await prisma.inventory.findUniqueOrThrow({ where: { id: command.inventoryId }, include: { product: true } });
-      const existingOrder = await prisma.purchaseOrder.findFirst({ where: { inventoryId: inventory.id, status: { not: "취소" } }, orderBy: { createdAt: "desc" } });
-      if (inventory.orderStatus === "발주 완료" && existingOrder) {
-        return `${inventory.product.name}은(는) 이미 ${existingOrder.quantity.toLocaleString()}개 발주 완료 상태입니다.`;
-      }
-      const expectedArrival = new Date(todayAt(9).getTime() + inventory.leadTimeDays * 86400000);
-      await prisma.$transaction([
-        prisma.purchaseOrder.create({ data: { inventoryId: inventory.id, quantity: command.quantity, status: "발주 완료", expectedArrival } }),
-        prisma.inventory.update({ where: { id: inventory.id }, data: { orderStatus: "발주 완료", recommendedOrderQty: command.quantity } }),
-        prisma.task.create({ data: { title: `${inventory.product.name} ${command.quantity.toLocaleString()}개 입고 추적`, category: "재고/발주", priority: "HIGH", dueAt: expectedArrival, dueLabel: `입고 예정 ${expectedArrival.toLocaleDateString("ko-KR")}`, status: "대기", aiExecutable: false, source: "SYSTEM_SIGNAL", reason: "발주 완료 후 실제 입고까지 추적하기 위해 생성했습니다." } }),
-        prisma.calendarEvent.create({ data: { title: `${inventory.product.name} ${command.quantity.toLocaleString()}개 입고 예정`, type: "입고", startAt: expectedArrival, endAt: new Date(expectedArrival.getTime() + 3600000), status: "예정", sourceId: inventory.id, description: "발주에서 자동 생성된 입고 일정" } }),
-      ]);
-      return `${inventory.product.name} ${command.quantity.toLocaleString()}개 발주와 입고 추적 업무를 생성했습니다.`;
     }
+    case "REVIEW_TASK":
+      throw new DecisionError("업무의 결정 기록을 열어주세요.", 409, command.id);
+    case "SAVE_DECISION":
+      return saveDecision(prisma, command, actor);
+    case "CREATE_ORDER":
+      return registerDecisionOrder(prisma, command, todayAt(9));
     case "HOLD_ORDER": {
-      const inventory = await prisma.inventory.findUniqueOrThrow({ where: { id: command.inventoryId }, include: { product: true } });
-      if (inventory.orderStatus === "발주 완료") return `${inventory.product.name}은(는) 이미 발주되어 보류할 수 없습니다.`;
-      await prisma.inventory.update({ where: { id: command.inventoryId }, data: { orderStatus: "보류" } });
-      return "발주 검토를 보류했습니다.";
+      const task = await prisma.task.findFirst({ where: { inventoryId: command.inventoryId, requiresDecision: true } });
+      throw new DecisionError("보류 이유와 재검토 일시를 기록해주세요.", 409, task?.id);
     }
     case "ADVANCE_PROMOTION": {
       const promotion = await prisma.promotion.findUniqueOrThrow({ where: { id: command.id } });
@@ -103,7 +107,7 @@ async function execute(command: Command) {
       await prisma.collaborationRequest.update({ where: { id: command.id }, data: { status: command.status } });
       return `협업 요청을 ${command.status} 상태로 변경했습니다.`;
     case "GENERATE_REPORT": {
-      const reportData = { title: `${command.period} AI 성과 리포트`, period: command.period, achievement: 96, summary: "스킨케어와 A 브랜드데이가 성장을 이끌었고, 메이크업 하락은 경쟁사 할인 시점과 함께 관찰됐습니다.", wins: "스킨케어 +4.2%p; A 브랜드데이 +2.8%p", misses: "메이크업 -1.5%p; 품절 -0.8%p", nextActions: "립 실구매가 모니터링; A 립밤 입고 추적; 립오일 소싱 후보 검토" };
+      const reportData = { title: `${command.period} AI 성과 리포트`, period: command.period, achievement: 96, summary: "스킨케어와 A 브랜드데이가 성장을 이끌었고, 메이크업 하락은 경쟁사 할인 시점과 함께 관찰됐습니다.", wins: "스킨케어 +4.2%p; A 브랜드데이 +2.8%p", misses: "메이크업 -1.5%p; 품절 -0.8%p", nextActions: reportNextActions(await getDashboardData()).join("; ") || "현재 데이터에서 급한 후속 조치가 없습니다" };
       const existing = await prisma.performanceReport.findFirst({ where: { period: command.period } });
       const report = existing
         ? await prisma.performanceReport.update({ where: { id: existing.id }, data: reportData })
@@ -112,11 +116,11 @@ async function execute(command: Command) {
       const document = await prisma.knowledgeDocument.findFirst({ where: { title: report.title, source: "AI 성과 분석" } });
       if (document) await prisma.knowledgeDocument.update({ where: { id: document.id }, data: documentData });
       else await prisma.knowledgeDocument.create({ data: documentData });
-      return existing ? "AI 성과 리포트와 지식 문서를 최신 상태로 업데이트했습니다." : "AI 성과 리포트를 생성하고 지식 저장소에 보관했습니다.";
+      return existing ? "AI 성과 리포트와 지식 문서를 최신 상태로 업데이트했습니다." : "AI 성과 리포트를 생성하고 기록 > 지식 문서에 보관했습니다.";
     }
     case "ADD_KNOWLEDGE":
       await prisma.knowledgeDocument.create({ data: { title: command.title, type: command.documentType, content: command.content, source: command.source, tags: command.tags } });
-      return "지식 저장소에 문서를 추가했습니다.";
+      return "기록 > 지식 문서에 문서를 추가했습니다.";
     case "ARTICLE_FEEDBACK":
       await prisma.$transaction([
         prisma.articleFeedback.deleteMany({ where: { articleId: command.id } }),
@@ -127,7 +131,7 @@ async function execute(command: Command) {
       const article = await prisma.article.update({ where: { id: command.id }, data: { saved: true } });
       const existing = await prisma.knowledgeDocument.findFirst({ where: { source: `article:${article.id}` } });
       if (!existing) await prisma.knowledgeDocument.create({ data: { title: article.title, type: "리서치", content: article.summary, source: `article:${article.id}`, tags: "시장,기사,트렌드" } });
-      return "기사를 지식 저장소에 저장했습니다.";
+      return "기사를 기록 > 지식 문서에 저장했습니다.";
     }
     case "READ_NOTIFICATIONS":
       await prisma.notification.updateMany({ data: { read: true } });
@@ -140,12 +144,18 @@ async function execute(command: Command) {
 
 export async function POST(request: Request) {
   try {
+    const session = await auth();
+    if (!session?.user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
     const command = commandSchema.parse(await request.json());
-    const message = await execute(command);
-    return NextResponse.json({ message, data: await getDashboardData() });
+    assertDatabaseEnvironment();
+    const account = session.user.email ? await prisma.account.findUnique({ where: { email: session.user.email }, select: { id: true, name: true } }) : null;
+    if (!account) return NextResponse.json({ error: "로그인을 다시 확인해주세요." }, { status: 401 });
+    const message = await execute(command, account);
+    return NextResponse.json({ message, data: await getDashboardData(account.id) });
   } catch (error) {
+    if (error instanceof DecisionError) return NextResponse.json({ error: error.message, code: "DECISION_REQUIRED", taskId: error.taskId }, { status: error.status });
     if (error instanceof z.ZodError) return NextResponse.json({ error: "입력값을 확인해주세요.", details: error.flatten() }, { status: 400 });
-    console.error(error);
-    return NextResponse.json({ error: "요청을 처리하지 못했습니다." }, { status: 500 });
+    logDatabaseError(error, "업무 저장");
+    return NextResponse.json({ error: databaseErrorMessage(error, "요청을 처리하지 못했습니다.") }, { status: 500 });
   }
 }

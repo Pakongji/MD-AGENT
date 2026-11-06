@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { hashPassword } from "@/lib/auth/password";
+import { assertDatabaseEnvironment } from "@/lib/db/config";
+import { databaseErrorMessage, logDatabaseError } from "@/lib/db/errors";
 
 const registrationSchema = z.object({
   name: z.string().trim().min(2).max(60),
@@ -22,6 +24,7 @@ export async function POST(request: Request) {
 
   const email = parsed.data.email.toLowerCase();
   try {
+    assertDatabaseEnvironment();
     await prisma.account.create({
       data: {
         name: parsed.data.name,
@@ -34,7 +37,7 @@ export async function POST(request: Request) {
     if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
       return NextResponse.json({ error: "이미 가입된 이메일입니다." }, { status: 409 });
     }
-    console.error(error);
-    return NextResponse.json({ error: "회원가입을 처리하지 못했습니다." }, { status: 500 });
+    logDatabaseError(error, "회원가입");
+    return NextResponse.json({ error: databaseErrorMessage(error, "회원가입을 처리하지 못했습니다.") }, { status: 500 });
   }
 }

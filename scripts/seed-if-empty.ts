@@ -1,9 +1,12 @@
 import { PrismaClient } from "../generated/prisma";
 import { seedDemoData } from "../lib/db/seed-demo";
+import { assertDatabaseEnvironment } from "../lib/db/config";
+import { logDatabaseError } from "../lib/db/errors";
 
 const prisma = new PrismaClient();
 
 async function main() {
+  assertDatabaseEnvironment();
   const userCount = await prisma.user.count();
 
   if (userCount > 0) {
@@ -17,7 +20,7 @@ async function main() {
 
 main()
   .catch((error) => {
-    console.error(error);
+    logDatabaseError(error, "빈 DB 시드");
     process.exitCode = 1;
   })
   .finally(async () => prisma.$disconnect());

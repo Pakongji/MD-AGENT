@@ -1,7 +1,6 @@
 FROM node:24-bookworm-slim
 
 ENV NODE_ENV=production
-ENV DATABASE_URL=file:/var/data/md-agent.db
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates openssl \
@@ -11,7 +10,8 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY prisma ./prisma
+RUN pnpm install --frozen-lockfile --prod=false
 
 COPY . .
 RUN pnpm build \

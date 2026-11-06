@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -14,6 +14,8 @@ model Account {
   email        String   @unique
   passwordHash String
   createdAt    DateTime @default(now())
+  decisions    TaskDecision[]
+  promotionPlans PromotionPlan[]
 }
 
 model User {
@@ -48,6 +50,36 @@ model Task {
   group        TaskGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+  requiresDecision Boolean @default(false)
+  inventoryId  String?
+  inventory    Inventory? @relation(fields: [inventoryId], references: [id], onDelete: SetNull)
+  decisions    TaskDecision[]
+
+  @@index([inventoryId])
+}
+
+model TaskDecision {
+  id           String   @id
+  taskId       String
+  task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId     String
+  author       Account  @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  authorName   String
+  status       String   @default("DRAFT")
+  outcome      String   @default("PROCEED")
+  content      String   @default("")
+  rationale    String   @default("")
+  alternatives String   @default("")
+  followUp     String   @default("")
+  reviewAt     DateTime?
+  quantity     Int?
+  evidence     Json
+  confirmedAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([taskId, createdAt])
+  @@index([authorId])
 }
 
 model SalesMetric {
@@ -100,6 +132,7 @@ model Inventory {
   orderStatus          String          @default("미발주")
   purchaseOrders       PurchaseOrder[]
   updatedAt            DateTime        @updatedAt
+  decisionTasks        Task[]
 }
 
 model PurchaseOrder {
@@ -191,6 +224,36 @@ model Promotion {
   stage          String   @default("아이디어")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  aiPlan         PromotionPlan?
+}
+
+model WorkActivity {
+  id          BigInt   @id @default(autoincrement())
+  entity      String
+  entityId    String
+  action      String
+  occurredAt  DateTime @default(now())
+  snapshot    Json
+
+  @@index([entity, entityId, occurredAt])
+  @@index([occurredAt])
+}
+
+model PromotionPlan {
+  id          String    @id @default(cuid())
+  authorId    String
+  author      Account   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  promotionId String?   @unique
+  promotion   Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  brief       Json
+  research    Json
+  draft       Json?
+  version     Int       @default(0)
+  revisions   Json      @default("[]")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([authorId, updatedAt])
 }
 
 model CalendarEvent {

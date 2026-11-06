@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MD AGENT · Figma로 기획안 가져오기</title>
+<style>
+body { max-width: 680px; margin: 40px auto; padding: 0 20px; font: 16px/1.7 system-ui, sans-serif; color: #151922; }
+a { color: #5d43b4; } li { margin: 8px 0; } code { background: #f1edff; padding: 2px 5px; }
+</style>
+<h1>Figma로 기획안 가져오기</h1>
+<p>확정 기획안 파일을 열면 편집 가능한 배너 프레임과 상세페이지 프레임이 생성됩니다.</p>
+<h2>처음 한 번 설정하기</h2>
+<ol>
+  <li>Figma 데스크톱 앱의 디자인 파일에서 <strong>Plugins → Development → New plugin</strong>을 선택하고, 사용자 인터페이스가 있는 플러그인을 만듭니다.</li>
+  <li>생성된 플러그인 폴더에 <a href="code.js" download>code.js</a>와 <a href="ui.html" download>ui.html</a>을 저장합니다.</li>
+  <li>Figma가 생성한 <code>manifest.json</code>의 ID를 보존하고 <code>main</code>을 <code>code.js</code>, <code>ui</code>를 <code>ui.html</code>로 지정합니다. 네트워크 접근은 <code>{"allowedDomains":["none"]}</code>으로 설정할 수 있습니다.</li>
+</ol>
+<h2>기획안 가져오기</h2>
+<ol>
+  <li>MD AGENT에서 확정안의 <strong>Figma용 기획안 다운로드</strong>를 누릅니다.</li>
+  <li>편집할 Figma 파일에서 개발 플러그인을 실행하고, 받은 JSON을 선택해 프레임을 생성합니다.</li>
+  <li>상품 이미지와 로고를 추가한 뒤 프레임 링크를 복사해 MD AGENT의 <strong>Figma 시안 링크</strong>에 저장합니다.</li>
+</ol>
+<p><a href="https://developers.figma.com/docs/plugins/manifest/">Figma 플러그인 설정 문서</a></p>
+</html>

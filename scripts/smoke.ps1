@@ -1,8 +1,32 @@
+﻿# 통합 스모크 테스트. 업무 데이터를 시드 상태로 초기화한 뒤 검증하고, 끝나면 다시 초기화합니다.
+# 공용 Supabase DB에서는 실행하지 마세요. 격리된 데모 DB에서만 -AllowReset을 붙여 실행합니다.
+#
+#   $env:SMOKE_EMAIL = "test@example.com"; $env:SMOKE_PASSWORD = "..."
+#   pwsh -NoProfile -File .\scripts\smoke.ps1 -AllowReset [-BaseUrl http://localhost:3000]
+param(
+  [string]$BaseUrl = $(if ($env:SMOKE_BASE_URL) { $env:SMOKE_BASE_URL } else { "http://localhost:3000" }),
+  [switch]$AllowReset
+)
+
 $ErrorActionPreference = "Stop"
-$base = "http://localhost:3000"
+$base = $BaseUrl.TrimEnd("/")
+
+if (-not $AllowReset) {
+  throw "이 스크립트는 업무 데이터를 데모 시드로 초기화합니다. 격리된 데모 DB에서만 -AllowReset을 붙여 실행하세요."
+}
+if (-not $env:SMOKE_EMAIL -or -not $env:SMOKE_PASSWORD) {
+  throw "SMOKE_EMAIL, SMOKE_PASSWORD 환경변수에 테스트 계정을 지정하세요."
+}
+
+$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+
+function Invoke-Get([string]$path) {
+  return Invoke-RestMethod -Uri "$base$path" -WebSession $script:session
+}
 
 function Invoke-Post([string]$path, [hashtable]$body) {
-  return Invoke-RestMethod -Uri "$base$path" -Method Post -ContentType "application/json; charset=utf-8" -Body ($body | ConvertTo-Json -Depth 12 -Compress)
+  $json = $body | ConvertTo-Json -Depth 12 -Compress
+  return Invoke-RestMethod -Uri "$base$path" -Method Post -ContentType "application/json; charset=utf-8" -Body ([System.Text.Encoding]::UTF8.GetBytes($json)) -WebSession $script:session
 }
 
 function Assert-True([bool]$condition, [string]$message) {
@@ -10,8 +34,18 @@ function Assert-True([bool]$condition, [string]$message) {
   Write-Output "PASS: $message"
 }
 
+# NextAuth Credentials 로그인: CSRF 토큰을 받은 뒤 같은 세션 쿠키로 자격 증명을 보냅니다.
+$csrf = Invoke-Get "/api/auth/csrf"
+$form = @{ csrfToken = $csrf.csrfToken; email = $env:SMOKE_EMAIL; password = $env:SMOKE_PASSWORD; callbackUrl = "$base/"; json = "true" }
+Invoke-WebRequest -Uri "$base/api/auth/callback/credentials" -Method Post -Body $form -WebSession $session -UseBasicParsing -MaximumRedirection 0 -ErrorAction SilentlyContinue | Out-Null
+$authSession = Invoke-Get "/api/auth/session"
+Assert-True ([bool]$authSession.user) "signs in with the smoke test account"
+
+Invoke-Post "/api/command" @{ type = "RESET_DEMO" } | Out-Null
+Write-Output "PASS: demo data reset before smoke test"
+
 try {
-  $initial = Invoke-RestMethod -Uri "$base/api/bootstrap"
+  $initial = Invoke-Get "/api/bootstrap"
   Assert-True ($initial.tasks.Count -ge 4) "bootstrap returns seeded tasks"
   Assert-True ($initial.inventory.Count -ge 5) "bootstrap returns seeded inventory"
 
@@ -29,7 +63,7 @@ try {
 
   $selected = @($plan.result.goals[0].tasks[0], $plan.result.goals[0].tasks[3], $plan.result.goals[0].tasks[4])
   $afterTasks = Invoke-Post "/api/command" @{ type = "ADD_TASKS"; goal = $plan.result.goals[0].goal; goalReason = $plan.result.goals[0].reason; tasks = $selected }
-  Assert-True ($afterTasks.data.tasks.Count -eq ($initial.tasks.Count + 3)) "selected planned tasks persist to SQLite"
+  Assert-True ($afterTasks.data.tasks.Count -eq ($initial.tasks.Count + 3)) "selected planned tasks persist to PostgreSQL"
 
   $trend = Invoke-Post "/api/command" @{ type = "ADD_TASK"; title = "립오일 추가 발주 검토"; category = "재고/발주"; priority = "HIGH"; due = "오늘"; reason = "시장/트렌드 분석에서 생성" }
   Assert-True (($trend.data.tasks | Where-Object title -eq "립오일 추가 발주 검토").Count -eq 1) "market action creates a task"

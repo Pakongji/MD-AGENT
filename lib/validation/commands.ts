@@ -3,14 +3,23 @@ import { z } from "zod";
 const plannedTask = z.object({
   title: z.string().min(1), category: z.string().min(1), priority: z.enum(["HIGH", "MEDIUM", "LOW"]),
   due: z.string().min(1), aiExecutable: z.boolean(), source: z.enum(["USER_INPUT", "AI_INFERRED", "SYSTEM_SIGNAL"]), reason: z.string(),
+  requiresDecision: z.boolean().optional(),
 });
 
 export const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ADD_TASKS"), goal: z.string().min(1), goalReason: z.string(), tasks: z.array(plannedTask).min(1) }),
-  z.object({ type: z.literal("ADD_TASK"), title: z.string().min(1), category: z.string().min(1), priority: z.enum(["HIGH", "MEDIUM", "LOW"]).default("MEDIUM"), due: z.string().default("오늘"), reason: z.string().default("") }),
+  z.object({ type: z.literal("ADD_TASK"), title: z.string().min(1), category: z.string().min(1), priority: z.enum(["HIGH", "MEDIUM", "LOW"]).default("MEDIUM"), due: z.string().default("오늘"), reason: z.string().default(""), requiresDecision: z.boolean().optional() }),
   z.object({ type: z.literal("TOGGLE_TASK"), id: z.string().min(1) }),
-  z.object({ type: z.literal("UPDATE_TASK"), id: z.string().min(1), title: z.string().min(1), status: z.enum(["대기", "진행중", "완료"]), priority: z.enum(["HIGH", "MEDIUM", "LOW"]) }),
-  z.object({ type: z.literal("CREATE_ORDER"), inventoryId: z.string().min(1), quantity: z.number().int().positive() }),
+  z.object({ type: z.literal("UPDATE_TASK"), id: z.string().min(1), title: z.string().min(1), status: z.enum(["대기", "진행중", "완료"]), priority: z.enum(["HIGH", "MEDIUM", "LOW"]), requiresDecision: z.boolean().optional() }),
+  z.object({ type: z.literal("REVIEW_TASK"), id: z.string().min(1) }),
+  z.object({
+    type: z.literal("SAVE_DECISION"), id: z.string().uuid(), taskId: z.string().min(1).optional(), inventoryId: z.string().min(1).optional(),
+    status: z.enum(["DRAFT", "CONFIRMED"]), outcome: z.enum(["PROCEED", "HOLD", "DECLINE"]),
+    content: z.string().trim().max(2000).default(""), rationale: z.string().trim().max(4000).default(""),
+    alternatives: z.string().trim().max(2000).default(""), followUp: z.string().trim().max(1000).default(""),
+    reviewAt: z.string().datetime().nullable().optional(), quantity: z.number().int().positive().max(10000000).nullable().optional(),
+  }),
+  z.object({ type: z.literal("CREATE_ORDER"), inventoryId: z.string().min(1), quantity: z.number().int().positive(), decisionId: z.string().min(1).optional(), expectedArrival: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }),
   z.object({ type: z.literal("HOLD_ORDER"), inventoryId: z.string().min(1) }),
   z.object({ type: z.literal("ADVANCE_PROMOTION"), id: z.string().min(1) }),
   z.object({ type: z.literal("CREATE_PROMOTION"), name: z.string().min(1), period: z.string().min(1), goal: z.string().min(1) }),

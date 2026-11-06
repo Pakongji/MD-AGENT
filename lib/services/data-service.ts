@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/db/prisma";
 import type { DashboardData } from "@/lib/types/domain";
+import { assertDatabaseEnvironment } from "@/lib/db/config";
 
-export async function getDashboardData() {
+export async function getDashboardData(viewerId?: string) {
+  assertDatabaseEnvironment();
   const [tasks, products, inventory, purchaseOrders, marketKeywords, marketTrends, articles, competitorEvents, promotions, calendarEvents, collaborationRequests, performanceReports, knowledgeDocuments, insights, notifications, salesMetrics, aiConversations] = await Promise.all([
-    prisma.task.findMany({ include: { group: { select: { goal: true } } }, orderBy: [{ status: "desc" }, { dueAt: "asc" }, { createdAt: "desc" }] }),
+    prisma.task.findMany({ include: { group: { select: { goal: true } }, decisions: { orderBy: { createdAt: "desc" } } }, orderBy: [{ status: "desc" }, { dueAt: "asc" }, { createdAt: "desc" }] }),
     prisma.product.findMany({ include: { brand: { select: { name: true, status: true } }, inventory: true }, orderBy: { revenue: "desc" } }),
     prisma.inventory.findMany({ include: { product: { select: { name: true, category: true } }, purchaseOrders: { orderBy: { createdAt: "desc" } } }, orderBy: { stockDays: "asc" } }),
     prisma.purchaseOrder.findMany({ orderBy: { createdAt: "desc" } }),
@@ -26,7 +28,7 @@ export async function getDashboardData() {
     tasks, products, inventory, purchaseOrders, marketKeywords, marketTrends, articles,
     competitorEvents, promotions, calendarEvents, collaborationRequests, performanceReports,
     knowledgeDocuments, insights, notifications, salesMetrics, aiConversations,
-    meta: { aiProvider: process.env.AI_PROVIDER || "mock", lastUpdated: new Date().toISOString() },
+    meta: { aiProvider: process.env.AI_PROVIDER || "mock", lastUpdated: new Date().toISOString(), viewerId },
   };
   return JSON.parse(JSON.stringify(data)) as DashboardData;
 }

@@ -37,7 +37,9 @@ export function LoginForm({ redirectTo, hasLoginError }: LoginFormProps) {
 
       const result = await signIn("credentials", { email, password, redirect: false, redirectTo });
       if (!result?.ok || !result.url) {
-        setMessage("이메일 또는 비밀번호를 확인해주세요.");
+        setMessage(result?.code === "database_unavailable"
+          ? "데이터베이스에 연결하지 못했습니다. .env의 DATABASE_URL 설정과 pnpm db:setup 실행 여부를 확인해주세요."
+          : "이메일 또는 비밀번호를 확인해주세요.");
         return;
       }
       window.location.assign(result.url);
