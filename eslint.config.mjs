@@ -5,5 +5,5 @@ import nextTs from "eslint-config-next/typescript";
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
-  globalIgnores([".next/**", "generated/**", "prisma/dev.db"]),
+  globalIgnores([".next/**", "generated/**", "prisma/dev.db", "frontend/**"]),
 ]);

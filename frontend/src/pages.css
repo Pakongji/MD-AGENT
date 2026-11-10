@@ -1,0 +1,5 @@
+.pages-notice { max-width: 640px; margin: 10vh auto; padding: 28px; color: #172033; }
+.pages-notice h1 { font-size: 22px; margin-bottom: 16px; }
+.pages-notice p { margin-bottom: 16px; }
+.pages-notice button, .pages-notice a, .pages-connection-alert button { display: inline-block; padding: 10px 16px; margin: 6px; border: 1px solid #d8dce9; border-radius: 8px; background: white; color: #172033; cursor: pointer; }
+.pages-connection-alert { position: relative; padding: 12px 20px; background: #fff2e5; color: #743810; font-size: 14px; text-align: center; }

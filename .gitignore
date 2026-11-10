@@ -14,3 +14,7 @@ data/*.db-journal
 generated/
 .DS_Store
 _backup/
+frontend/dist/
+frontend/.wrangler/
+frontend/test-results/
+frontend/playwright-report/

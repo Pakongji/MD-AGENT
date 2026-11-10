@@ -2,40 +2,11 @@ import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/db/prisma";
 import { kstDay, worklogPeriods, type WorklogRange } from "./period";
 import { poStage } from "@/lib/orders/purchase-order";
+import type { WorklogReport, WorklogRow } from "./types";
+export type { WorklogReport, WorklogRow } from "./types";
 
 type Snapshot = Prisma.JsonValue;
 type Activity = { entity: string; entityId: string; action: string; occurredAt: Date; snapshot: Snapshot };
-
-export type WorklogRow = {
-  id: string;
-  type: string;
-  title: string;
-  status: string;
-  completedAt: string;
-  due: string;
-  result: string;
-  blocker: string;
-  next: string;
-  owner: string;
-  source: string;
-  href: string;
-};
-
-export type WorklogReport = {
-  label: string;
-  start: string;
-  end: string;
-  asOf: string;
-  trackingSince: string;
-  completed: number;
-  pending: number;
-  blockers: number;
-  calendar: number;
-  rows: WorklogRow[];
-  followups: WorklogRow[];
-  achievements: string[];
-  blockerGroups: { name: string; count: number }[];
-};
 
 const key = (event: Activity) => event.entity + ":" + event.entityId;
 const snapshot = (event: Activity) => (event.snapshot && typeof event.snapshot === "object" && !Array.isArray(event.snapshot) ? event.snapshot : {});

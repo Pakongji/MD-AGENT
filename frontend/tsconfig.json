@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "types": ["vite/client", "node"],
+    "paths": {
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react-dom": ["./node_modules/@types/react-dom"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*"],
+      "react-router-dom": ["./node_modules/react-router-dom"],
+      "lucide-react": ["./node_modules/lucide-react"],
+      "recharts": ["./node_modules/recharts"],
+      "zod": ["./node_modules/zod"],
+      "zustand": ["./node_modules/zustand"],
+      "next/link": ["./src/compat/link.tsx"],
+      "next/navigation": ["./src/compat/navigation.ts"],
+      "next-auth/react": ["./src/compat/auth.tsx"],
+      "@/components/common/page-tabs": ["./src/compat/page-tabs.tsx"],
+      "@/*": ["../*"]
+    }
+  },
+  "include": ["src", "tests", "vite.config.ts"]
+}

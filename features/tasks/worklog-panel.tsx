@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Download } from "lucide-react";
 import { Badge, Button, Card, EmptyState, Metric, SectionTitle } from "@/components/common/ui";
 import { kstDay, worklogPeriods, type WorklogPeriod } from "@/lib/worklog/period";
-import type { WorklogReport } from "@/lib/worklog/report";
+import type { WorklogReport } from "@/lib/worklog/types";
 
 export function WorklogPanel() {
   const [period, setPeriod] = useState<WorklogPeriod>("daily");

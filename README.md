@@ -1,5 +1,7 @@
 # MD AI Agent
 
+Cloudflare Pages용 React 프론트엔드는 [`frontend/README.md`](frontend/README.md)를 참조하세요. 기존 Next.js 서버는 아래 실행 방법을 그대로 사용합니다.
+
 매출·재고·시장·경쟁사 데이터를 **변화 → AI 해석 → 자사 영향 → MD 판단 → 실행**으로 연결하는 Beauty Commerce용 MD 업무 파트너 MVP입니다.
 
 단순 BI 화면이 아니라 모든 핵심 신호를 실제 업무, 발주, 프로모션, 캘린더, 협업 요청, 성과 리포트와 지식 저장으로 연결합니다. API 키가 없어도 `MockAIProvider`로 전체 흐름이 동작합니다.
