@@ -10,6 +10,10 @@ class DatabaseSignInError extends CredentialsSignin {
   code = "database_unavailable";
 }
 
+class InactiveAccountError extends CredentialsSignin {
+  code = "account_inactive";
+}
+
 const credentialsSchema = z.object({
   email: z.string().trim().email().max(254),
   password: z.string().min(1).max(128),
@@ -30,8 +34,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           const account = await prisma.account.findUnique({ where: { email } });
           const passwordMatches = await verifyPassword(parsed.data.password, account?.passwordHash);
           if (!account || !passwordMatches) return null;
+          if (!account.active) throw new InactiveAccountError();
+          await prisma.account.update({ where: { id: account.id }, data: { lastLoginAt: new Date() } });
           return { id: account.id, name: account.name, email: account.email };
         } catch (error) {
+          if (error instanceof InactiveAccountError) throw error;
           logDatabaseError(error, "로그인");
           throw new DatabaseSignInError();
         }

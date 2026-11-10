@@ -52,3 +52,9 @@ test("시간을 말하지 않은 '오늘' 마감은 저녁에 만들어도 바�
   // 오전에 만들면 기본 18:00
   assert.equal(kst(dueForStorage("오늘", new Date("2026-11-05T01:00:00Z"))), "2026-11-05T18:00");
 });
+
+test("다음 영업일은 주말을 건너뛴다", async () => {
+  const { nextBusinessDay } = await import("../lib/utils/due");
+  assert.equal(kst(nextBusinessDay(new Date("2026-11-06T03:00:00Z"))), "2026-11-09T18:00"); // 금 → 월
+  assert.equal(kst(nextBusinessDay(new Date("2026-11-05T03:00:00Z"))), "2026-11-06T18:00"); // 목 → 금
+});

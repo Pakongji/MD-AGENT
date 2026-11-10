@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { commandPermission, denyMessage, hasPermission } from "@/lib/auth/permissions";
 import type { AIConversationItem, DashboardData, DecisionOutcome } from "@/lib/types/domain";
 import { EMPTY_DASHBOARD } from "@/lib/types/domain";
 import { latestConfirmed } from "@/lib/decisions/shared";
@@ -38,6 +39,10 @@ interface AppState {
   error: string | null;
   busy: boolean;
   decisionTarget: DecisionTarget | null;
+  /** 발주서(거래처 메일) 창에 띄울 발주 ID */
+  poTarget: string | null;
+  openPurchaseOrder: (purchaseOrderId: string) => void;
+  closePurchaseOrder: () => void;
   openDecision: (target: DecisionTarget) => void;
   closeDecision: () => void;
   toast: { message: string; tone: ToastTone } | null;
@@ -64,6 +69,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   error: null,
   busy: false,
   decisionTarget: null,
+  poTarget: null,
+  openPurchaseOrder: (purchaseOrderId) => set({ poTarget: purchaseOrderId }),
+  closePurchaseOrder: () => set({ poTarget: null }),
   openDecision: (target) => set({ decisionTarget: { ...target, nonce: Date.now() } }),
   closeDecision: () => set({ decisionTarget: null }),
   toast: null,
@@ -83,6 +91,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     const task = get().data.tasks.find((item) => item.id === command.id);
     if (command.type === "REVIEW_TASK" || (command.type === "TOGGLE_TASK" && task?.requiresDecision) || (command.type === "UPDATE_TASK" && command.status === "완료" && task?.status !== "완료" && (task?.requiresDecision || command.requiresDecision) && task && (!latestConfirmed(task) || latestConfirmed(task)?.outcome === "HOLD"))) {
       get().openDecision({ taskId: String(command.id) });
+      return false;
+    }
+    // 권한이 없는 실행은 서버에 보내기 전에 안내합니다(최종 검사는 서버).
+    const required = commandPermission(String(command.type));
+    const viewer = get().data.meta.viewer;
+    if (viewer && !hasPermission(viewer, required)) {
+      set({ toast: { message: denyMessage(required!), tone: "error" } });
+      window.setTimeout(() => get().clearToast(), 3200);
+      return false;
+    }
+    if (command.type === "OPEN_PURCHASE_ORDER") {
+      get().openPurchaseOrder(String(command.purchaseOrderId));
       return false;
     }
     if ((command.type === "CREATE_ORDER" && !command.decisionId) || command.type === "HOLD_ORDER") {

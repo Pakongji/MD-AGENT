@@ -9,13 +9,18 @@ datasource db {
 }
 
 model Account {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   name         String
-  email        String   @unique
+  email        String    @unique
   passwordHash String
-  createdAt    DateTime @default(now())
+  role         String    @default("VIEWER")
+  permissions  String[]  @default([])
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
   decisions    TaskDecision[]
   promotionPlans PromotionPlan[]
+  assignedTasks  Task[]  @relation("TaskAssignee")
 }
 
 model User {
@@ -54,8 +59,11 @@ model Task {
   inventoryId  String?
   inventory    Inventory? @relation(fields: [inventoryId], references: [id], onDelete: SetNull)
   decisions    TaskDecision[]
+  assigneeId   String?
+  assignee     Account?   @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 
   @@index([inventoryId])
+  @@index([assigneeId])
 }
 
 model TaskDecision {
@@ -75,11 +83,57 @@ model TaskDecision {
   quantity     Int?
   evidence     Json
   confirmedAt  DateTime?
+  /** NOT_REQUIRED(승인 불필요) · PENDING(승인 대기) · APPROVED(승인) · REJECTED(반려) */
+  approvalStatus  String    @default("NOT_REQUIRED")
+  approverId      String?
+  approverName    String    @default("")
+  approvalComment String    @default("")
+  approvalAt      DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   @@index([taskId, createdAt])
   @@index([authorId])
+  @@index([approvalStatus])
+}
+
+/** 업로드한 매출 원장: 일자 × 채널 × 상품 한 줄. 일별 합계(SalesMetric)와 상품·채널 집계의 원천입니다. */
+model SalesRecord {
+  id          String   @id @default(cuid())
+  date        DateTime
+  channel     String
+  productKey  String
+  sku         String   @default("")
+  productName String   @default("")
+  productId   String?
+  revenue     Int
+  orders      Int      @default(0)
+  quantity    Int      @default(0)
+  importId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([date, channel, productKey])
+  @@index([date])
+  @@index([productId])
+}
+
+/** 엑셀 업로드 이력: 누가 언제 어떤 파일을 올려 몇 줄을 반영했는지 */
+model DataImport {
+  id           String    @id @default(cuid())
+  kind         String
+  fileName     String
+  totalRows    Int
+  appliedRows  Int
+  skippedRows  Int
+  periodStart  DateTime?
+  periodEnd    DateTime?
+  authorId     String
+  authorName   String
+  summary      Json
+  createdAt    DateTime  @default(now())
+
+  @@index([kind, createdAt])
 }
 
 model SalesMetric {
@@ -94,12 +148,54 @@ model SalesMetric {
   @@unique([date, category])
 }
 
+model Supplier {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  contactName  String   @default("")
+  email        String   @default("")
+  cc           String   @default("")
+  phone        String   @default("")
+  deliverTo    String   @default("")
+  paymentTerms String   @default("")
+  leadTimeDays Int?
+  memo         String   @default("")
+  brands       Brand[]
+  products     SupplierProduct[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/** 공급사 품목: 거래처가 공급하는 상품(공급가·MOQ). 자사 상품과 연결하면 발주서에 공급가가 들어갑니다. */
+model SupplierProduct {
+  id               String   @id @default(cuid())
+  supplierId       String
+  supplier         Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  name             String
+  supplierSku      String   @default("")
+  category         String   @default("")
+  unitCost         Int?
+  moq              Int?
+  leadTimeDays     Int?
+  memo             String   @default("")
+  linkedProductId  String?
+  linkedProduct    Product? @relation(fields: [linkedProductId], references: [id], onDelete: SetNull)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([supplierId, name])
+  @@index([linkedProductId])
+}
+
 model Brand {
-  id        String    @id @default(cuid())
-  name      String    @unique
-  status    String
-  products  Product[]
-  createdAt DateTime  @default(now())
+  id         String    @id @default(cuid())
+  name       String    @unique
+  status     String
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  products   Product[]
+  createdAt  DateTime  @default(now())
+
+  @@index([supplierId])
 }
 
 model Product {
@@ -111,9 +207,14 @@ model Product {
   salesQty   Int
   marginRate Float
   risk       String
+  sku        String?    @unique
+  imageUrl   String?
+  price      Int?
+  cost       Int?
   brandId    String
   brand      Brand      @relation(fields: [brandId], references: [id])
   inventory  Inventory?
+  supplierProducts SupplierProduct[]
   createdAt  DateTime   @default(now())
 }
 

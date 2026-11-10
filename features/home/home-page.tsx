@@ -9,7 +9,8 @@ import { CopilotAnswerView } from "@/components/common/copilot-answer";
 import type { CopilotAnswer } from "@/lib/ai/provider";
 import { ALL_CATEGORIES, matchesCategory, useAppStore } from "@/lib/store/app-store";
 import { latestConfirmed } from "@/lib/decisions/shared";
-import { buildBriefing, lastDayRevenue, pendingDecisionTasks } from "@/lib/services/briefing";
+import { approvalSummary, buildBriefing, lastDayRevenue, pendingDecisionTasks } from "@/lib/services/briefing";
+import { hasPermission } from "@/lib/auth/permissions";
 import { dataAsOf } from "@/lib/services/data-freshness";
 
 type ChatMessage =
@@ -26,7 +27,7 @@ function parseAnswer(value: string) {
 export function HomePage() {
   const router = useRouter();
   const { data: session } = useSession();
-  const { data, command, busy, loading, recordAIConversation, openDecision, filters } = useAppStore();
+  const { data, command, busy, loading, recordAIConversation, openDecision, openPurchaseOrder, filters } = useAppStore();
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [asking, setAsking] = useState(false);
@@ -39,6 +40,8 @@ export function HomePage() {
   const revenue = lastDayRevenue(data);
   const openTasks = data.tasks.filter((task) => task.status !== "완료");
   const pending = pendingDecisionTasks(data);
+  const approvals = approvalSummary(data, data.meta.viewerId, hasPermission(data.meta.viewer, "approve"));
+  const myOpen = data.tasks.filter((task) => task.status !== "완료" && task.assigneeId === data.meta.viewerId).length;
   const openCollab = data.collaborationRequests.filter((item) => item.status !== "완료");
   const waitingCollab = openCollab.filter((item) => item.status === "승인 대기" || item.status === "대기");
   const name = session?.user?.name || session?.user?.email?.split("@")[0] || "";
@@ -104,8 +107,14 @@ export function HomePage() {
     <div className="rd-home-main">
       <div className="rd-greeting">
         <h2>{name ? `좋은 하루예요, ${name}님` : "좋은 하루예요"}</h2>
-        <p>오늘 결정할 일 {signals.length}개 · 결정이 필요한 업무 {pending.length}건 · 회신 대기 협업 {waitingCollab.length}건이 있어요</p>
+        <p>오늘 결정할 일 {signals.length}개 · 내 업무 {myOpen}건 · 결정이 필요한 업무 {pending.length}건 · 회신 대기 협업 {waitingCollab.length}건이 있어요</p>
       </div>
+
+      {(approvals.toReview.length > 0 || approvals.rejected.length > 0 || approvals.waiting.length > 0) && <div className="rd-approval-strip">
+        {approvals.toReview.length > 0 && <button className="is-review" onClick={() => openDecision({ taskId: approvals.toReview[0].task.id })}><strong>승인 요청 {approvals.toReview.length}건</strong><span>{approvals.toReview[0].decision!.authorName} · {approvals.toReview[0].task.title}</span><b>승인 검토 →</b></button>}
+        {approvals.rejected.length > 0 && <button className="is-rejected" onClick={() => openDecision({ taskId: approvals.rejected[0].task.id })}><strong>반려 {approvals.rejected.length}건</strong><span>{approvals.rejected[0].task.title} · {approvals.rejected[0].decision!.approvalComment}</span><b>다시 결정 →</b></button>}
+        {approvals.waiting.length > 0 && <button className="is-waiting" onClick={() => openDecision({ taskId: approvals.waiting[0].task.id })}><strong>승인 대기 {approvals.waiting.length}건</strong><span>{approvals.waiting[0].task.title}</span><b>요청 보기 →</b></button>}
+      </div>}
 
       <Card className="rd-brief">
         <div className="rd-card-head">
@@ -122,7 +131,7 @@ export function HomePage() {
           <div className="rd-signal-actions">
             <Button variant="purple" disabled={busy} onClick={() => signal.action.kind === "order"
               ? openDecision(signal.action.decided ? { inventoryId: signal.action.inventory.id } : { inventoryId: signal.action.inventory.id, outcome: "PROCEED", quantity: signal.action.inventory.recommendedOrderQty })
-              : router.push(signal.action.href)}>{signal.action.label}</Button>
+              : signal.action.kind === "po" ? openPurchaseOrder(signal.action.purchaseOrderId) : router.push(signal.action.href)}>{signal.action.label}</Button>
           </div>
         </div>)}
         {!signals.length && <p className="rd-muted">지금 선택한 카테고리에서 바로 결정할 신호가 없어요.</p>}

@@ -1,4 +1,4 @@
-export type NavKey = "home" | "work" | "analysis" | "market" | "promotions" | "records";
+export type NavKey = "home" | "work" | "analysis" | "market" | "promotions" | "records" | "registry";
 
 export interface NavItem {
   key: NavKey;
@@ -28,6 +28,12 @@ export const navSections: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { key: "promotions", href: "/promotions", label: "프로모션", sub: "조사 → 개요 → 확정 → 일정", subtitle: "시장 조사 → 행사 개요 → 3안 비교 → 확정 → 일정·시안까지 한 흐름으로" },
       { key: "records", href: "/records", label: "기록", sub: "결정 · 성과 · 지식", subtitle: "왜 그렇게 결정했는지, 무엇이 효과 있었는지 다시 찾기" },
+    ],
+  },
+  {
+    label: "관리",
+    items: [
+      { key: "registry", href: "/registry", label: "데이터 등록", sub: "거래처 · 상품 · 경쟁사 · 사용자", subtitle: "발주를 보낼 거래처, 자사·공급사 상품, 경쟁사 변화, AI Agent를 쓸 사용자와 권한을 등록해요" },
     ],
   },
 ];

@@ -4,10 +4,11 @@ import { MarketPage } from "@/features/market/market-page";
 import { CompetitorsPage } from "@/features/competitors/competitors-page";
 import { firstParam } from "@/lib/utils/params";
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ tab?: string | string[] }> }) {
-  const tab = firstParam((await searchParams).tab);
+export default async function Page({ searchParams }: { searchParams: Promise<{ tab?: string | string[]; focus?: string | string[]; event?: string | string[] }> }) {
+  const params = await searchParams;
+  const tab = firstParam(params.tab);
   return <PageTabs key={tab ?? "overview"} initial={tab} tabs={[
-    { key: "overview", label: "요약 · 영향 순", content: <MarketOverview /> },
+    { key: "overview", label: "요약 · 영향 순", content: <MarketOverview focus={firstParam(params.focus)} eventId={firstParam(params.event)} /> },
     { key: "trend", label: "트렌드 · 검색", content: <MarketPage /> },
     { key: "competitors", label: "경쟁사 변화", content: <CompetitorsPage /> },
   ]} />;

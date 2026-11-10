@@ -279,7 +279,7 @@ pnpm build
 로직 단위 테스트(DB 접속 없음)는 한 번에 실행할 수 있습니다. 마감 문구 해석, AI 업무 계획 분리, 프로모션 일정 추천, 결정·상품 진단을 검증합니다.
 
 ```bash
-pnpm exec tsx --test scripts/db.test.ts scripts/decisions.test.ts scripts/product-diagnostics.test.ts scripts/due.test.ts scripts/task-planner.test.ts scripts/promotion-schedule.test.ts scripts/report-actions.test.ts scripts/ai-answers.test.ts
+pnpm exec tsx --test scripts/db.test.ts scripts/decisions.test.ts scripts/product-diagnostics.test.ts scripts/due.test.ts scripts/task-planner.test.ts scripts/promotion-schedule.test.ts scripts/report-actions.test.ts scripts/ai-answers.test.ts scripts/purchase-order.test.ts scripts/permissions.test.ts scripts/image.test.ts scripts/approval.test.ts scripts/import.test.ts scripts/competitor.test.ts
 ```
 
 `test:db`는 실제 DB 접속 없이 설정 검증과 비밀값 비노출을 확인합니다. `pnpm db:validate`도 연결 설정과 스키마만 검사하며 테이블을 생성하지 않습니다.

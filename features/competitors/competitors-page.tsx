@@ -7,6 +7,7 @@ import { Badge, Button, Card, DataBoundary, Metric, Modal, SectionTitle, money }
 import { mockAnalytics } from "@/lib/mock/data";
 import { useAppStore } from "@/lib/store/app-store";
 import type { CompetitorEventItem } from "@/lib/types/domain";
+import { rankCompetitorEvents } from "@/lib/services/competitor";
 
 export function CompetitorsPage() {
   const [tab, setTab] = useState<"today" | "history">("today");
@@ -14,7 +15,7 @@ export function CompetitorsPage() {
   const [responseEvent, setResponseEvent] = useState<CompetitorEventItem | null>(null);
   const { data, command } = useAppStore();
   const router = useRouter();
-  const prioritizedEvents = [...data.competitorEvents].sort((a, b) => Math.abs(b.impactEstimate) - Math.abs(a.impactEstimate));
+  const prioritizedEvents = rankCompetitorEvents(data.competitorEvents, Date.parse(data.meta.lastUpdated) || 0);
   const main = prioritizedEvents[0];
   const eventTypeSummary = Array.from(data.competitorEvents.reduce((summary, event) => summary.set(event.type, (summary.get(event.type) ?? 0) + 1), new Map<string, number>())).map(([type, count]) => `${type} ${count}`).join(" · ");
   const overlapDays = main?.overlapDescription.match(/(\d+)일/)?.[1];

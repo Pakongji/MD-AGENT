@@ -112,3 +112,11 @@ export function dueDisplay(task: { dueAt?: string | null; dueLabel?: string | nu
   const relative = relativeDueLabel(task.dueAt, now);
   return label && !isDateLikeLabel(label) ? `${label} · ${relative}` : relative;
 }
+
+/** 다음 영업일(주말 제외) 지정 시각(KST). 거래처 회신처럼 주말에 오지 않는 마감에 씁니다. */
+export function nextBusinessDay(now = new Date(), hour = DEFAULT_HOUR) {
+  const today = kstYmd(now);
+  let midnight = kstMidnight(today.year, today.month, today.day) + DAY;
+  while ([0, 6].includes(weekdayOf(midnight))) midnight += DAY;
+  return new Date(midnight + hour * 3_600_000);
+}

@@ -54,8 +54,8 @@ export interface DataSourceSlot {
 }
 
 export const DATA_SOURCES: DataSourceSlot[] = [
-  { key: "sales", name: "매출", method: "채널 어드민 엑셀 업로드 (주 1회 또는 매일)", columns: ["일자", "채널", "상품코드", "매출액", "주문수"], affects: "홈 · 매출·재고 · 기록", recommended: "추천 1순위", template: true },
-  { key: "inventory", name: "재고", method: "ERP 재고 엑셀 업로드", columns: ["상품코드", "현재고", "입고예정일", "리드타임", "안전재고"], affects: "홈 · 매출·재고 · 프로모션", recommended: "추천 2순위", template: true },
+  { key: "sales", name: "매출", method: "채널 어드민 엑셀 업로드 (주 1회 또는 매일)", columns: ["일자", "채널", "상품코드", "상품명", "매출액", "주문수", "판매수량"], affects: "홈 · 매출·재고 · 기록", recommended: "추천 1순위", template: true },
+  { key: "inventory", name: "재고", method: "ERP 재고 엑셀 업로드", columns: ["상품코드", "상품명", "현재고", "일평균판매", "리드타임", "안전재고"], affects: "홈 · 매출·재고 · 프로모션", recommended: "추천 2순위", template: true },
   { key: "competitor", name: "경쟁사 가격", method: "비교할 상품 URL 등록 → 매일 수집", columns: ["경쟁 상품 URL", "비교할 자사 상품"], affects: "시장·경쟁 · 프로모션", template: true },
   { key: "trend", name: "검색 트렌드", method: "네이버 데이터랩 API 키 입력", columns: ["관심 키워드", "비교 기간"], affects: "홈 · 시장·경쟁", template: false },
   { key: "calendar", name: "캘린더", method: "Google 캘린더 계정 연결", columns: ["캘린더 선택"], affects: "업무", template: false },
@@ -63,3 +63,26 @@ export const DATA_SOURCES: DataSourceSlot[] = [
 
 // 지금은 연결된 데이터가 없어서 모든 화면이 샘플 데이터로 동작합니다.
 export const CONNECTED_SOURCES: DataSourceSlot["key"][] = [];
+
+/**
+ * 거래처(공급사) 연락처 샘플. 실제 거래처 정보가 연결되기 전까지 발주서 메일 초안에 씁니다.
+ * 이메일은 예시 도메인(example.com)이며, 발주서 창에서 받는 사람을 직접 고칠 수 있습니다.
+ */
+export interface SupplierContact {
+  brand: string;
+  company: string;
+  contactName: string;
+  email: string;
+  cc?: string;
+  deliverTo: string;
+  paymentTerms: string;
+}
+
+export const SUPPLIER_DIRECTORY: SupplierContact[] = [
+  { brand: "A 뷰티", company: "A뷰티(주)", contactName: "영업팀 김지은 매니저", email: "order@abeauty.example.com", deliverTo: "자사 이천 물류센터", paymentTerms: "월말 마감 익월 말 현금" },
+  { brand: "B 코스메틱", company: "B코스메틱", contactName: "유통영업 박서준 대리", email: "sales@bcosmetic.example.com", deliverTo: "자사 이천 물류센터", paymentTerms: "월말 마감 익월 15일" },
+  { brand: "C 더마", company: "C더마랩", contactName: "B2B팀 이하늘 과장", email: "b2b@cderma.example.com", deliverTo: "자사 이천 물류센터", paymentTerms: "월말 마감 익월 말 현금" },
+  { brand: "D 클린", company: "D클린코리아", contactName: "영업지원 최유나 사원", email: "order@dclean.example.com", deliverTo: "자사 이천 물류센터", paymentTerms: "선결제" },
+  { brand: "E 컬러랩", company: "E컬러랩", contactName: "온라인영업 정민호 팀장", email: "partner@ecolorlab.example.com", deliverTo: "자사 이천 물류센터", paymentTerms: "월말 마감 익월 말 현금" },
+  { brand: "F 헤어", company: "F헤어사이언스", contactName: "채널영업 한도윤 대리", email: "order@fhair.example.com", deliverTo: "자사 이천 물류센터", paymentTerms: "월말 마감 익월 15일" },
+];

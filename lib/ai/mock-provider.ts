@@ -3,8 +3,11 @@ import type { DashboardData, TaskPlanGoal, TaskPlanResult, TaskPlanTask } from "
 import { getSalesSnapshot, signedPercent } from "@/lib/services/dashboard-metrics";
 import { latestConfirmed, outcomeLabels } from "@/lib/decisions/shared";
 import { dueDisplay, parseDueText, scheduleLabel } from "@/lib/utils/due";
-import { CHANNEL_SAMPLES, PRICE_COMPARISON_SAMPLE } from "@/lib/mock/samples";
+import { PRICE_COMPARISON_SAMPLE } from "@/lib/mock/samples";
+import { channelRows } from "@/lib/services/channel-stats";
 import { byStockGap, stockState } from "@/lib/services/inventory-status";
+import { poNumber, poStage, resolveSupplier } from "@/lib/orders/purchase-order";
+import { focusCompetitorEvent } from "@/lib/services/competitor";
 
 const number = (value: number) => new Intl.NumberFormat("ko-KR").format(value);
 
@@ -339,6 +342,24 @@ export class MockAIProvider implements AIProvider {
         };
       }
       const order = item?.purchaseOrders?.[0];
+      const orderStage = order ? poStage(order.status) : undefined;
+      if (item && order && (orderStage === "발주 등록" || orderStage === "발주서 발송")) {
+        const productName = item.product?.name ?? "해당 상품";
+        const brand = data.products.find((product) => product.id === item.productId)?.brand?.name;
+        const supplier = resolveSupplier(brand, data)?.company ?? brand ?? "거래처";
+        const arrival = new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric" }).format(new Date(order.expectedArrival));
+        return orderStage === "발주 등록" ? {
+          conclusion: `${productName} ${number(order.quantity)}개 발주는 등록됐지만, ${supplier}에 발주서를 아직 보내지 않았습니다. 오늘 발주서를 보내야 합니다.`,
+          evidence: [`${poNumber(order)} · 희망 입고 ${arrival}`, `현재 재고 ${number(item.stockQty)}개(${item.stockDays}일분) · 리드타임 ${item.leadTimeDays}일`, `거래처: ${supplier}${resolveSupplier(brand, data)?.contactName ? ` · ${resolveSupplier(brand, data)!.contactName}${resolveSupplier(brand, data)!.sample ? " (샘플)" : ""}` : " · 연락처 확인 필요"}`],
+          impact: "발주서를 보내기 전에는 거래처가 생산·출고 일정을 잡지 않아 희망 입고일이 보장되지 않습니다.",
+          actions: [{ label: "발주서 메일 보내기", command: { type: "OPEN_PURCHASE_ORDER", purchaseOrderId: order.id } }, { label: "발주·입고 진행 보기", target: "/sales?tab=inventory" }],
+        } : {
+          conclusion: `${productName} 발주서는 ${supplier}에 보냈고, 납기 회신을 기다리는 중입니다.`,
+          evidence: [`${poNumber(order)} · 희망 입고 ${arrival}`, `현재 재고 ${item.stockDays}일분 · 리드타임 ${item.leadTimeDays}일`],
+          impact: "회신을 받으면 입고일을 확정하세요. 입고 추적 업무와 캘린더가 같은 날짜로 맞춰집니다.",
+          actions: [{ label: "납기 회신 입력", command: { type: "OPEN_PURCHASE_ORDER", purchaseOrderId: order.id } }],
+        };
+      }
       if (item?.orderStatus === "발주 완료" && order) {
         const arrival = new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric" }).format(new Date(order.expectedArrival));
         const overdue = new Date(order.expectedArrival) < new Date();
@@ -401,25 +422,30 @@ export class MockAIProvider implements AIProvider {
       };
     }
     // "올리브영 매출 왜 빠졌어?"처럼 채널을 콕 집은 질문은 채널별 자료(샘플)로 답합니다.
-    const channelSample = CHANNEL_SAMPLES.find((item) => question.includes(item.channel));
+    // 업로드한 매출이 있으면 실데이터 채널 집계, 없으면 샘플입니다.
+    const allChannels = channelRows(data);
+    const channelSample = allChannels.find((item) => question.includes(item.channel));
     if (channelSample && /(매출|실적|왜|빠|떨어|하락|줄|올랐|늘|상승|전환)/.test(question)) {
-      const average = CHANNEL_SAMPLES.reduce((sum, item) => sum + item.conversionRate * item.share, 0);
+      const withConversion = allChannels.filter((item) => item.conversionRate !== null);
+      const average = withConversion.reduce((sum, item) => sum + (item.conversionRate ?? 0) * item.share, 0);
+      const channelRevenue = channelSample.revenue ?? sales.revenue * channelSample.share;
+      const conversion = channelSample.conversionRate;
       const price = PRICE_COMPARISON_SAMPLE.rows.find((row) => row.channel === channelSample.channel);
-      const event = [...data.competitorEvents].sort((a, b) => Math.abs(b.impactEstimate) - Math.abs(a.impactEstimate))[0];
+      const event = focusCompetitorEvent(data.competitorEvents, Date.parse(data.meta.lastUpdated) || 0);
       const eventEnded = event ? Date.parse(event.endAt) < Date.parse(data.meta.lastUpdated || new Date().toISOString()) : false;
       const down = channelSample.changeRate < 0;
       const evidence = [
-        `${channelSample.channel} 최근 30일 매출 약 ${(sales.revenue * channelSample.share / 100000000).toFixed(1)}억원 · 비중 ${Math.round(channelSample.share * 100)}% · 직전 대비 ${signedPercent(channelSample.changeRate)}`,
-        `구매 전환율 ${channelSample.conversionRate}% (전체 가중평균 ${average.toFixed(1)}%)`,
+        `${channelSample.channel} 최근 30일 매출 약 ${(channelRevenue / 100000000).toFixed(1)}억원 · 비중 ${Math.round(channelSample.share * 100)}% · 직전 대비 ${signedPercent(channelSample.changeRate)}`,
+        ...(conversion !== null ? [`구매 전환율 ${conversion}% (전체 가중평균 ${average.toFixed(1)}%)`] : ["채널별 방문자 자료가 없어 전환율은 비교하지 않았어요"]),
         ...(price ? [`대표 상품 실구매가: 자사 ${number(price.ourPrice)}원 vs ${PRICE_COMPARISON_SAMPLE.competitorProduct} ${number(price.competitorPrice)}원 (${price.ourPrice > price.competitorPrice ? `자사 +${number(price.ourPrice - price.competitorPrice)}원` : "자사 우위"})`] : []),
         ...(event && down ? [`같은 시기 ${event.title} (${new Date(event.startAt).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}~${new Date(event.endAt).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}${eventEnded ? " · 종료" : ""})`] : []),
       ];
       return {
         conclusion: down
-          ? `${withTopic(channelSample.channel)} 직전 기간 대비 ${signedPercent(channelSample.changeRate)}입니다. ${channelSample.conversionRate <= average - 0.3 ? `전환율(${channelSample.conversionRate}%)이 평균(${average.toFixed(1)}%)보다 낮아 가격·혜택 영향 가능성이 큽니다` : `전환율(${channelSample.conversionRate}%)은 평균(${average.toFixed(1)}%)과 비슷해, 가격 영향인지 유입 감소인지 함께 확인해야 합니다`}${channelSample.note ? ` (${channelSample.note})` : ""}.`
+          ? `${withTopic(channelSample.channel)} 직전 기간 대비 ${signedPercent(channelSample.changeRate)}입니다. ${conversion === null ? "상품별 매출에서 어느 상품이 줄었는지 먼저 확인해야 합니다" : conversion <= average - 0.3 ? `전환율(${conversion}%)이 평균(${average.toFixed(1)}%)보다 낮아 가격·혜택 영향 가능성이 큽니다` : `전환율(${conversion}%)은 평균(${average.toFixed(1)}%)과 비슷해, 가격 영향인지 유입 감소인지 함께 확인해야 합니다`}${channelSample.note ? ` (${channelSample.note})` : ""}.`
           : `${withTopic(channelSample.channel)} 직전 기간 대비 ${signedPercent(channelSample.changeRate)}로 성장 중입니다${channelSample.note ? ` — ${channelSample.note}` : ""}.`,
         evidence,
-        impact: `채널별 실적은 아직 연결되지 않아 샘플 값으로 계산했어요. 원인은 추정이며, ${eventEnded ? "경쟁사 행사가 끝났으니 다음 주 회복 여부를 확인하세요." : "경쟁사 행사 종료 후 회복 여부로 검증하세요."}`,
+        impact: `${channelSample.sample ? "채널별 실적은 아직 연결되지 않아 샘플 값으로 계산했어요." : "업로드한 매출(최근 30일 vs 그 전 30일) 기준이에요."} 원인은 추정이며, ${eventEnded ? "경쟁사 행사가 끝났으니 다음 주 회복 여부를 확인하세요." : "경쟁사 행사 종료 후 회복 여부로 검증하세요."}`,
         actions: [
           { label: "채널별 매출 보기", target: "/sales?tab=overview" },
           ...(down ? [{ label: "실구매가 비교", target: "/market?tab=overview" }, { label: "회복 여부 확인 업무 추가", taskTitle: `${channelSample.channel} 매출 회복 여부 확인`, taskCategory: "매출 분석" }] : []),

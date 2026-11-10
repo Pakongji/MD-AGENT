@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
+import { denyMessage, hasPermission } from "@/lib/auth/permissions";
 import { databaseErrorMessage, logDatabaseError } from "@/lib/db/errors";
 import { briefSchema, draftSchema, milestones, overviewToBrief, querySchema, researchSchema, scheduleSchema, type PromotionMilestone, type PromotionRevision } from "@/lib/promotion-planner/model";
 import { PlannerResearchError, referenceResearch, regenerateOptions, researchPromotion } from "@/lib/promotion-planner/research";
@@ -22,6 +23,12 @@ class PlanConflict extends Error {}
 async function authorId() {
   const email = (await auth())?.user?.email;
   return email ? (await prisma.account.findUnique({ where: { email }, select: { id: true } }))?.id : null;
+}
+
+/** 기획안 저장·확정·일정 등록은 '프로모션' 권한이 필요합니다. */
+async function canEditPromotion(id: string) {
+  const account = await prisma.account.findUnique({ where: { id }, select: { permissions: true, active: true } });
+  return hasPermission(account, "promotion");
 }
 
 function fail(error: unknown) {
@@ -47,6 +54,7 @@ export async function POST(request: Request) {
   try {
     const author = await authorId();
     if (!author) return Response.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    if (!await canEditPromotion(author)) return Response.json({ error: denyMessage("promotion") }, { status: 403 });
     const parsed = requestSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message || "입력 내용을 확인해주세요." }, { status: 400 });
     const command = parsed.data;

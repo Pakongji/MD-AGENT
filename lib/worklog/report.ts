@@ -1,6 +1,7 @@
 import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/db/prisma";
 import { kstDay, worklogPeriods, type WorklogRange } from "./period";
+import { poStage } from "@/lib/orders/purchase-order";
 
 type Snapshot = Prisma.JsonValue;
 type Activity = { entity: string; entityId: string; action: string; occurredAt: Date; snapshot: Snapshot };
@@ -91,6 +92,8 @@ export function buildWorklog(range: WorklogRange, before: Activity[], events: Ac
   const decisions = new Map<string, Activity>();
   for (const event of current.values()) {
     if (event.entity !== "TaskDecision" || statusOf(event) !== "CONFIRMED") continue;
+    // 승인 대기·반려된 결정은 아직 효력이 없으므로 업무일지의 결정 결과로 쓰지 않습니다.
+    if (!["NOT_REQUIRED", "APPROVED", undefined].includes(field(event, "approvalStatus") || undefined)) continue;
     const taskId = field(event, "taskId");
     const saved = decisions.get(taskId);
     if (!saved || time(field(event, "confirmedAt")) >= time(field(saved, "confirmedAt"))) decisions.set(taskId, event);
@@ -158,6 +161,10 @@ export function buildWorklog(range: WorklogRange, before: Activity[], events: Ac
       result = (typeof qty === "number" ? qty.toLocaleString("ko-KR") + "개 발주 등록" : "발주 등록") + (linked ? " · 캘린더 입고 일정 연결" : "");
       if (overdue) blocker = "입고 확인 필요";
       if (isPending) next = "실제 입고 여부 확인";
+      // 발주 등록만 하고 거래처에 보내지 않은 발주는 병목입니다.
+      if (status === "발주 등록" || status === "발주 완료") { blocker = blocker || "발주서 미발송"; next = "거래처에 발주서 보내기"; }
+      else if (status === "발주서 발송") { result += " · 발주서 발송"; next = "거래처 납기 회신 확인"; }
+      else if (status === "납기 확정") result += " · 납기 확정";
     } else if (event.entity === "Promotion") {
       result = "기획 단계 · " + status;
       if (isPending) next = "현재 단계와 다음 마감 확인";
@@ -170,7 +177,7 @@ export function buildWorklog(range: WorklogRange, before: Activity[], events: Ac
     if (isPending && !blocker && event.entity === "Task" && result === "처리 내용 기록 없음") result = dueAt ? "마감 전 · 진행 예정" : "마감일 없음 · 일정 확인 필요";
 
     const row = {
-      id: key(event), type: source, title, status, completedAt: completedAt ? format(completedAt) : "",
+      id: key(event), type: source, title, status: event.entity === "PurchaseOrder" ? poStage(status) : status, completedAt: completedAt ? format(completedAt) : "",
       due, result, blocker, next, owner: field(event, "owner"), source: taskDecision ? source + " · 의사결정 기록" : source, href,
     };
     if (include && !(isCalendar && linkedCalendar.has(event.entityId))) rows.push(row);

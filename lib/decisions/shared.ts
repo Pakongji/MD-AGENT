@@ -8,9 +8,26 @@ export function suggestsDecision(title: string) {
   return /결정|확정|검토|대응안/.test(title);
 }
 
+/** 효력 있는 결정: 확정됐고, 승인이 필요 없거나 승인된 결정. (승인 대기·반려는 아직 결정되지 않은 것으로 봅니다) */
+export const isEffective = (decision: { status: string; approvalStatus?: string | null }) =>
+  decision.status === "CONFIRMED" && (!decision.approvalStatus || decision.approvalStatus === "NOT_REQUIRED" || decision.approvalStatus === "APPROVED");
+
+const newest = <T extends { confirmedAt: string | null; createdAt: string }>(items: T[]) =>
+  [...items].sort((a, b) => (b.confirmedAt ?? b.createdAt).localeCompare(a.confirmedAt ?? a.createdAt))[0];
+
 export function latestConfirmed(task: Pick<TaskItem, "decisions">) {
-  return task.decisions?.filter((decision) => decision.status === "CONFIRMED")
-    .sort((a, b) => (b.confirmedAt ?? b.createdAt).localeCompare(a.confirmedAt ?? a.createdAt))[0];
+  return newest((task.decisions ?? []).filter(isEffective));
+}
+
+/** 승인 대기 중인 가장 최근 결정 */
+export function pendingApproval(task: Pick<TaskItem, "decisions">) {
+  return newest((task.decisions ?? []).filter((decision) => decision.status === "CONFIRMED" && decision.approvalStatus === "PENDING"));
+}
+
+/** 가장 최근 확정 시도가 반려됐는지(그 뒤로 효력 있는 결정이 없을 때) */
+export function lastRejected(task: Pick<TaskItem, "decisions">) {
+  const latest = newest((task.decisions ?? []).filter((decision) => decision.status === "CONFIRMED"));
+  return latest?.approvalStatus === "REJECTED" ? latest : undefined;
 }
 
 export function validateDecision(input: {

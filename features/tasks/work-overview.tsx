@@ -6,15 +6,18 @@ import { AlertTriangle, Copy, Mail, Plus } from "lucide-react";
 import { Badge, Button, Card, DataBoundary, EmptyState } from "@/components/common/ui";
 import { TaskRow } from "@/components/common/task-row";
 import { useAppStore } from "@/lib/store/app-store";
-import { latestConfirmed } from "@/lib/decisions/shared";
+import { latestConfirmed, pendingApproval } from "@/lib/decisions/shared";
+import { hasPermission } from "@/lib/auth/permissions";
 import { shortDate, shortDateTime } from "@/lib/services/data-freshness";
 import { kstDay } from "@/lib/worklog/period";
 import type { CalendarItem, TaskItem } from "@/lib/types/domain";
 
 type Filter = "전체" | "결정 필요" | "기한 지남" | "AI 초안 가능";
+type Scope = "mine" | "team" | "unassigned";
 
 const isOverdue = (task: TaskItem, now: number) => task.status !== "완료" && Boolean(task.dueAt) && Date.parse(task.dueAt!) < now;
-const needsDecision = (task: TaskItem) => task.requiresDecision && task.status !== "완료" && !latestConfirmed(task);
+// 승인 대기 중인 업무는 이미 결정을 올린 상태라 ‘결정이 필요해요’에서 뺍니다.
+const needsDecision = (task: TaskItem) => task.requiresDecision && task.status !== "완료" && !latestConfirmed(task) && !pendingApproval(task);
 const DECIDED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const decidedAt = (task: TaskItem) => { const decision = latestConfirmed(task); return decision ? Date.parse(decision.confirmedAt ?? decision.createdAt) : NaN; };
 
@@ -24,11 +27,22 @@ export function WorkOverview() {
   const [filter, setFilter] = useState<Filter>("전체");
   const [quickTitle, setQuickTitle] = useState("");
   const [showDone, setShowDone] = useState(false);
+  const viewerId = data.meta.viewerId;
+  const canApprove = hasPermission(data.meta.viewer, "approve");
+  // 담당자가 지정된 업무가 하나도 없으면 처음엔 팀 전체를 보여줍니다(기존 업무는 담당자 없음).
+  const [scope, setScope] = useState<Scope>(() => data.tasks.some((task) => task.assigneeId === viewerId) ? "mine" : "team");
   // 렌더 중 현재 시각을 직접 읽지 않고, 데이터를 불러온 시각을 기준으로 계산합니다.
   const now = Date.parse(data.meta.lastUpdated) || 0;
 
-  const open = data.tasks.filter((task) => task.status !== "완료");
-  const done = data.tasks.filter((task) => task.status === "완료");
+  const inScope = (task: TaskItem) => scope === "team" || (scope === "mine" ? task.assigneeId === viewerId : !task.assigneeId);
+  const scoped = data.tasks.filter(inScope);
+  const scopeCounts = { mine: data.tasks.filter((task) => task.status !== "완료" && task.assigneeId === viewerId).length, team: data.tasks.filter((task) => task.status !== "완료").length, unassigned: data.tasks.filter((task) => task.status !== "완료" && !task.assigneeId).length };
+  // 승인: 승인권자에게는 다른 사람이 올린 요청(범위와 관계없이), 그 외에는 내가 올린 요청을 따로 보여줍니다.
+  const pendingAll = data.tasks.filter((task) => pendingApproval(task));
+  const toReview = canApprove ? pendingAll.filter((task) => pendingApproval(task)!.authorId !== viewerId) : [];
+  const myPending = pendingAll.filter((task) => !toReview.includes(task) && (scope === "team" || pendingApproval(task)!.authorId === viewerId || task.assigneeId === viewerId));
+  const open = scoped.filter((task) => task.status !== "완료" && !pendingApproval(task));
+  const done = scoped.filter((task) => task.status === "완료");
   // 결정을 확정하면 업무가 완료되므로, 최근 7일 안에 결정한 업무는 ‘완료’에 묻지 않고 따로 보여줍니다.
   const decidedGroup = done.filter((task) => now - decidedAt(task) <= DECIDED_WINDOW_MS).sort((a, b) => decidedAt(b) - decidedAt(a));
   const olderDone = done.filter((task) => !decidedGroup.includes(task));
@@ -55,8 +69,9 @@ export function WorkOverview() {
   return <DataBoundary><div className="stack">
     <div className="rd-toolbar">
       <div className="rd-segment" role="group" aria-label="업무 범위">
-        <button aria-pressed="true">내 업무 {open.length}</button>
-        <button disabled title="업무에 담당자 정보가 연결되면 팀 업무를 나눠 볼 수 있어요.">팀 전체 · 담당자 연결 후</button>
+        <button aria-pressed={scope === "mine"} onClick={() => setScope("mine")}>내 업무 {scopeCounts.mine}</button>
+        <button aria-pressed={scope === "team"} onClick={() => setScope("team")}>팀 전체 {scopeCounts.team}</button>
+        <button aria-pressed={scope === "unassigned"} onClick={() => setScope("unassigned")} title="담당자를 정하지 않은 업무">담당자 없음 {scopeCounts.unassigned}</button>
       </div>
       <div className="rd-filter-chips">{(Object.keys(counts) as Filter[]).map((key) => <button key={key} aria-pressed={filter === key} onClick={() => setFilter(key)}>{key} {counts[key]}</button>)}</div>
       <form className="rd-quick-add" onSubmit={(event) => { event.preventDefault(); void addQuick(); }}>
@@ -69,11 +84,13 @@ export function WorkOverview() {
 
     <div className="rd-columns">
       <Card className="rd-col-main">
-        <div className="rd-card-head"><h3>할 일</h3><span className="rd-muted">결정 필요 → 결정 완료 → 마감 순</span></div>
+        <div className="rd-card-head"><h3>할 일</h3><span className="rd-muted">{toReview.length ? "승인 요청 → " : ""}결정 필요 → 결정 완료 → 마감 순</span></div>
+        {toReview.length > 0 && <><div className="rd-group-label rd-group-approval">승인 요청 · 내가 확인할 결정 {toReview.length}</div>{toReview.map((task) => <TaskRow key={task.id} task={task} onToggle={() => void command({ type: "TOGGLE_TASK", id: task.id })} />)}</>}
         {decisionGroup.length > 0 && <><div className="rd-group-label">결정이 필요해요</div>{decisionGroup.map((task) => <TaskRow key={task.id} task={task} onToggle={() => void command({ type: "TOGGLE_TASK", id: task.id })} />)}</>}
+        {myPending.length > 0 && <><div className="rd-group-label">승인 대기 · 팀장 확인 중 {myPending.length}</div>{myPending.map((task) => <TaskRow key={task.id} task={task} onToggle={() => void command({ type: "TOGGLE_TASK", id: task.id })} />)}</>}
         {filter === "전체" && decidedGroup.length > 0 && <><div className="rd-group-label">결정 완료 · 최근 7일</div>{decidedGroup.map((task) => <TaskRow key={task.id} task={task} onToggle={() => void command({ type: "TOGGLE_TASK", id: task.id })} />)}</>}
         {restGroup.length > 0 && <><div className="rd-group-label">진행할 업무</div>{restGroup.map((task) => <TaskRow key={task.id} task={task} onToggle={() => void command({ type: "TOGGLE_TASK", id: task.id })} />)}</>}
-        {!visible.length && <EmptyState title="조건에 맞는 업무가 없어요" description="다른 필터를 선택하거나 업무를 추가해보세요." />}
+        {!visible.length && !toReview.length && !myPending.length && <EmptyState title={scope === "mine" ? "나에게 맡겨진 업무가 없어요" : "조건에 맞는 업무가 없어요"} description={scope === "mine" ? "‘팀 전체’나 ‘담당자 없음’에서 업무를 골라 담당자를 나로 바꾸거나, 새 업무를 추가하세요." : "다른 필터를 선택하거나 업무를 추가해보세요."} />}
         {olderDone.length > 0 && <>
           <button className="rd-group-toggle" onClick={() => setShowDone(!showDone)}>완료 {olderDone.length} {showDone ? "접기" : "펼치기"}</button>
           {showDone && olderDone.map((task) => <TaskRow key={task.id} task={task} onToggle={() => void command({ type: "TOGGLE_TASK", id: task.id })} />)}

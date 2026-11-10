@@ -4,17 +4,19 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { SessionProvider, signOut, useSession } from "next-auth/react";
-import { Bell, BookOpen, Bot, ChartNoAxesCombined, ClipboardCheck, Clock3, Database, Home, LogOut, Send, Sparkles, Tag, TrendingUp, X } from "lucide-react";
+import { Bell, BookOpen, Bot, ChartNoAxesCombined, ClipboardCheck, Clock3, Database, FolderCog, Home, LogOut, Send, Sparkles, Tag, TrendingUp, X } from "lucide-react";
 import { Button, Modal } from "@/components/common/ui";
 import { DecisionDialog } from "@/components/common/decision-dialog";
+import { PurchaseOrderDialog } from "@/components/common/purchase-order-dialog";
 import { CopilotAnswerView } from "@/components/common/copilot-answer";
 import { ALL_CATEGORIES, useAppStore } from "@/lib/store/app-store";
-import { CHANNELS, CONNECTED_SOURCES, DATA_SOURCES, type Channel } from "@/lib/mock/samples";
+import { CHANNELS, DATA_SOURCES, type Channel } from "@/lib/mock/samples";
+import { connectedKinds } from "@/lib/services/channel-stats";
 import { dataConnectionMeta, navSections, routeMeta, type NavKey } from "@/lib/navigation";
 import { dataAsOf } from "@/lib/services/data-freshness";
 import type { CopilotAnswer } from "@/lib/ai/provider";
 
-const icons: Record<NavKey, typeof Home> = { home: Home, work: ClipboardCheck, analysis: ChartNoAxesCombined, market: TrendingUp, promotions: Tag, records: BookOpen };
+const icons: Record<NavKey, typeof Home> = { home: Home, work: ClipboardCheck, analysis: ChartNoAxesCombined, market: TrendingUp, promotions: Tag, records: BookOpen, registry: FolderCog };
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -33,7 +35,7 @@ function AuthenticatedAppShell({ children }: { children: React.ReactNode }) {
   const unread = data.notifications.filter((item) => !item.read).length;
   const categories = useMemo(() => [...new Set(data.products.map((item) => item.category))], [data.products]);
   const asOf = dataAsOf(data);
-  const connected = CONNECTED_SOURCES.length;
+  const connected = connectedKinds(data).length;
   const userLabel = session?.user?.name || session?.user?.email || "로그인 사용자";
 
   useEffect(() => { restoreFilters(); }, [restoreFilters]);
@@ -99,6 +101,7 @@ function AuthenticatedAppShell({ children }: { children: React.ReactNode }) {
     <CopilotModal />
     <Modal open={resetOpen} title="데모 데이터 초기화" onClose={() => setResetOpen(false)} width="460px"><p>지금까지 추가·수정한 데모 데이터가 모두 초기 상태로 돌아갑니다.</p><div className="modal-actions"><Button variant="secondary" onClick={() => setResetOpen(false)}>취소</Button><Button variant="danger" disabled={busy} onClick={async () => { if (await command({ type: "RESET_DEMO" })) setResetOpen(false); }}>초기화</Button></div></Modal>
     <DecisionDialog />
+    <PurchaseOrderDialog />
   </div>;
 }
 

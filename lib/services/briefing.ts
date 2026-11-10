@@ -1,6 +1,8 @@
 import type { DashboardData, InventoryItem } from "@/lib/types/domain";
-import { latestConfirmed } from "@/lib/decisions/shared";
+import { lastRejected, latestConfirmed, pendingApproval } from "@/lib/decisions/shared";
 import { shortDate } from "@/lib/services/data-freshness";
+import { poNumber, poStage, resolveSupplier } from "@/lib/orders/purchase-order";
+import { eventPhase, focusCompetitorEvent } from "@/lib/services/competitor";
 
 export type SignalTone = "red" | "orange" | "green";
 
@@ -13,7 +15,7 @@ export interface BriefingSignal {
   impact: string;
   source: string;
   /** decided: 이미 발주 결정이 확정돼 등록만 남은 상태(새 결정을 요구하지 않고 기존 결정을 엽니다). */
-  action: { label: string; kind: "order"; inventory: InventoryItem; decided?: boolean } | { label: string; kind: "link"; href: string };
+  action: { label: string; kind: "order"; inventory: InventoryItem; decided?: boolean } | { label: string; kind: "link"; href: string } | { label: string; kind: "po"; purchaseOrderId: string };
 }
 
 const won = (value: number) => {
@@ -25,7 +27,37 @@ const won = (value: number) => {
 export function buildBriefing(data: DashboardData, inCategory: (category?: string | null) => boolean): BriefingSignal[] {
   const signals: BriefingSignal[] = [];
 
-  const risk = data.inventory
+  // 발주를 등록했지만 거래처에 아직 보내지 않았거나(가장 급함), 보냈는데 납기 회신을 못 받은 발주를 먼저 알립니다.
+  const now = Date.parse(data.meta.lastUpdated) || 0;
+  const openOrders = data.inventory.filter((item) => inCategory(item.product?.category))
+    .flatMap((item) => (item.purchaseOrders ?? []).map((po) => ({ item, po, stage: poStage(po.status) })));
+  // 여러 건이면 품절에 가장 가까운(재고일수가 적은) 상품부터, 같으면 입고 희망일이 빠른 순입니다.
+  const unsentAll = openOrders.filter((row) => row.stage === "발주 등록").sort((a, b) => a.item.stockDays - b.item.stockDays || a.po.expectedArrival.localeCompare(b.po.expectedArrival));
+  const unsent = unsentAll[0];
+  const awaiting = openOrders.filter((row) => row.stage === "발주서 발송").sort((a, b) => a.po.expectedArrival.localeCompare(b.po.expectedArrival))[0];
+  const poSignal = unsent ?? awaiting;
+  if (poSignal) {
+    const name = poSignal.item.product?.name ?? "상품";
+    const brand = data.products.find((product) => product.id === poSignal.item.productId)?.brand?.name;
+    const supplier = resolveSupplier(brand, data)?.company ?? brand ?? "거래처";
+    signals.push(unsent ? {
+      id: "inventory", tone: "red", label: "발주서",
+      title: `${name} ${poSignal.po.quantity.toLocaleString("ko-KR")}개 발주 등록됨 — ${supplier}에 발주서를 아직 보내지 않았어요`,
+      evidence: `${poNumber(poSignal.po)} · 희망 입고 ${shortDate(poSignal.po.expectedArrival)} · 재고 ${poSignal.item.stockDays}일분${unsentAll.length > 1 ? ` · 발송 대기 ${unsentAll.length}건 (나머지는 매출·재고 > 재고/발주)` : ""}`,
+      impact: `발주서를 보내야 거래처가 납기를 잡습니다. 보내지 않으면 희망 입고일(${shortDate(poSignal.po.expectedArrival)})이 지켜지지 않아요`,
+      source: "발주 · 입고 진행",
+      action: { label: "발주서 메일 보내기", kind: "po", purchaseOrderId: poSignal.po.id },
+    } : {
+      id: "inventory", tone: "orange", label: "회신 대기",
+      title: `${name} 발주서 보냄 — ${supplier} 납기 회신을 확인하세요`,
+      evidence: `${poNumber(poSignal.po)} · 희망 입고 ${shortDate(poSignal.po.expectedArrival)}${now && Date.parse(poSignal.po.expectedArrival) < now ? " · 희망일 지남" : ""}`,
+      impact: "회신받은 입고일로 확정해야 입고 추적과 캘린더가 맞춰집니다",
+      source: "발주 · 입고 진행",
+      action: { label: "납기 회신 입력", kind: "po", purchaseOrderId: poSignal.po.id },
+    });
+  }
+
+  const risk = poSignal ? undefined : data.inventory
     .filter((item) => item.orderStatus !== "발주 완료" && item.stockDays < item.leadTimeDays && inCategory(item.product?.category))
     .sort((a, b) => (a.stockDays - a.leadTimeDays) - (b.stockDays - b.leadTimeDays))[0];
   if (risk) {
@@ -55,17 +87,21 @@ export function buildBriefing(data: DashboardData, inCategory: (category?: strin
     });
   }
 
-  const competitor = [...data.competitorEvents].sort((a, b) => Math.abs(b.impactEstimate) - Math.abs(a.impactEstimate))[0];
+  const competitorNow = Date.parse(data.meta.lastUpdated) || 0;
+  const competitor = focusCompetitorEvent(data.competitorEvents, competitorNow);
   if (competitor) {
-    const now = Date.parse(data.meta.lastUpdated) || 0;
-    const ended = Boolean(now && Date.parse(competitor.endAt) < now);
+    const phase = eventPhase(competitor, competitorNow);
+    const ended = phase === "ended";
     signals.push({
-      id: "competitor", tone: "orange", label: ended ? "종료" : "주의",
-      title: ended ? `${competitor.title} — ${shortDate(competitor.endAt)}에 종료, 결과 확인` : `${competitor.title}${competitor.overlapDescription ? ` — ${competitor.overlapDescription}` : ""}`,
+      id: "competitor", tone: "orange", label: ended ? "종료" : phase === "upcoming" ? "예정" : "주의",
+      title: ended ? `${competitor.title} — ${shortDate(competitor.endAt)}에 종료, 결과 확인` : phase === "upcoming" ? `${competitor.title} — ${shortDate(competitor.startAt)} 시작 예정${competitor.overlapDescription ? ` · ${competitor.overlapDescription}` : ""}` : `${competitor.title}${competitor.overlapDescription ? ` — ${competitor.overlapDescription}` : ""}`,
       evidence: competitor.detail,
       impact: `예상 매출 영향 -${won(Math.abs(competitor.impactEstimate))} · 영향 상품 ${competitor.affectedSkuCount}개 (추정)`,
       source: `경쟁사 모니터링 · ${shortDate(competitor.startAt)}`,
-      action: { label: "대응안 보기", kind: "link", href: "/market" },
+      // 진행 중·예정이면 대응안으로, 끝났으면 행사 전·중·후 매출을 비교하는 결과 확인으로 보냅니다.
+      action: ended
+        ? { label: "결과 확인", kind: "link", href: `/market?tab=overview&focus=result&event=${competitor.id}` }
+        : { label: phase === "upcoming" ? "대응안 준비" : "대응안 보기", kind: "link", href: `/market?tab=overview&focus=competitor&event=${competitor.id}` },
     });
   }
 
@@ -101,5 +137,14 @@ export function lastDayRevenue(data: DashboardData) {
 }
 
 export function pendingDecisionTasks(data: DashboardData) {
-  return data.tasks.filter((task) => task.requiresDecision && task.status !== "완료" && !latestConfirmed(task));
+  return data.tasks.filter((task) => task.requiresDecision && task.status !== "완료" && !latestConfirmed(task) && !pendingApproval(task));
+}
+
+/** 홈에 보여줄 승인 현황: 내가 승인할 것 / 내가 올려서 기다리는 것 / 반려된 것 */
+export function approvalSummary(data: DashboardData, viewerId?: string, canApprove = false) {
+  const withPending = data.tasks.map((task) => ({ task, decision: pendingApproval(task) })).filter((row) => row.decision);
+  const toReview = canApprove ? withPending.filter((row) => row.decision!.authorId !== viewerId) : [];
+  const waiting = withPending.filter((row) => row.decision!.authorId === viewerId);
+  const rejected = data.tasks.map((task) => ({ task, decision: lastRejected(task) })).filter((row) => row.decision && row.decision.authorId === viewerId && !latestConfirmed(row.task) && !pendingApproval(row.task));
+  return { toReview, waiting, rejected };
 }

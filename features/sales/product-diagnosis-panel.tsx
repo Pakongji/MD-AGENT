@@ -5,9 +5,10 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Clock3, Layers3, ShieldAlert, SlidersHorizontal, X } from "lucide-react";
 import { Badge, Button, compactMoney, money } from "@/components/common/ui";
 import { useAppStore } from "@/lib/store/app-store";
-import { latestConfirmed, outcomeLabels } from "@/lib/decisions/shared";
+import { latestConfirmed, outcomeLabels, isEffective } from "@/lib/decisions/shared";
 import { diagnoseProduct, productInventory, relatedProductTasks, simulateProductScenario, type ProductScenarioKey, holdReorderGap } from "@/lib/services/product-diagnostics";
 import type { ProductItem } from "@/lib/types/domain";
+import { ProductThumb } from "@/components/common/product-thumb";
 
 const scenarioNames: Record<ProductScenarioKey, string> = { STANDARD: "일반 발주", EXPEDITED: "긴급 입고 가정", HOLD: "발주 보류" };
 const days = (value: number | null | undefined) => value === null || value === undefined ? "계산 불가" : `${value.toFixed(1)}일`;
@@ -40,7 +41,7 @@ function DiagnosisContent({ product, productIds, onSelect, onClose }: { product:
   const diagnosis = diagnoseProduct(product, data.products, inventory);
   const { benchmark, stock } = diagnosis;
   const tasks = relatedProductTasks(product, inventory, data.tasks);
-  const history = tasks.flatMap((task) => task.decisions.filter((item) => item.status === "CONFIRMED").map((record) => ({ task, record })))
+  const history = tasks.flatMap((task) => task.decisions.filter(isEffective).map((record) => ({ task, record })))
     .sort((a, b) => (b.record.confirmedAt ?? b.record.createdAt).localeCompare(a.record.confirmedAt ?? a.record.createdAt));
   const priorDecision = history[0]?.record;
   const [dailySales, setDailySales] = useState(String(inventory?.dailySales ?? ""));
@@ -116,7 +117,7 @@ function DiagnosisContent({ product, productIds, onSelect, onClose }: { product:
       if (event.shiftKey && document.activeElement === focusable[0]) { event.preventDefault(); focusable[focusable.length - 1]?.focus(); }
       else if (!event.shiftKey && document.activeElement === focusable[focusable.length - 1]) { event.preventDefault(); focusable[0]?.focus(); }
     }}>
-      <header className="pd-header"><div><span className="eyebrow">상품 진단</span><h2>{product.name}</h2><p>{product.brand.name} · {product.category} · {product.lifecycle}</p></div><div className="pd-navigation"><span>{index + 1} / {productIds.length}</span><button className="icon-button" disabled={index <= 0} onClick={() => onSelect(productIds[index - 1])} aria-label="이전 상품"><ChevronLeft size={17} /></button><button className="icon-button" disabled={index < 0 || index >= productIds.length - 1} onClick={() => onSelect(productIds[index + 1])} aria-label="다음 상품"><ChevronRight size={17} /></button><button ref={closeRef} className="icon-button" onClick={onClose} aria-label="상품 진단 닫기"><X size={18} /></button></div></header>
+      <header className="pd-header"><div className="pd-title-row"><ProductThumb name={product.name} src={product.imageUrl} size={56} /><div><span className="eyebrow">상품 진단</span><h2>{product.name}</h2><p>{product.brand.name} · {product.category} · {product.lifecycle}</p></div></div><div className="pd-navigation"><span>{index + 1} / {productIds.length}</span><button className="icon-button" disabled={index <= 0} onClick={() => onSelect(productIds[index - 1])} aria-label="이전 상품"><ChevronLeft size={17} /></button><button className="icon-button" disabled={index < 0 || index >= productIds.length - 1} onClick={() => onSelect(productIds[index + 1])} aria-label="다음 상품"><ChevronRight size={17} /></button><button ref={closeRef} className="icon-button" onClick={onClose} aria-label="상품 진단 닫기"><X size={18} /></button></div></header>
       <div className="pd-body">
         <section className={`pd-verdict ${danger ? "urgent" : caution ? "caution" : "calm"}`}><div className="pd-section-kicker">{danger ? <ShieldAlert size={16} /> : <CheckCircle2 size={16} />} 지금 확인할 문제 <Badge tone={danger ? "red" : caution ? "orange" : "green"}>{danger ? "우선 확인" : caution ? "검토 필요" : "관찰"}</Badge></div><h3>{diagnosis.headline}</h3><p>{diagnosis.explanation}</p><small>등록 자료에 규칙을 적용한 진단입니다. 판매 증감의 원인을 확정하는 분석은 아닙니다.</small></section>
 

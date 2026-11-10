@@ -4,11 +4,14 @@ import { prisma } from "@/lib/db/prisma";
 import { seedDemoData } from "@/lib/db/seed-demo";
 import { getDashboardData } from "@/lib/services/data-service";
 import { reportNextActions } from "@/lib/services/report-actions";
+import { confirmPurchaseOrderDelivery, receivePurchaseOrder, sendPurchaseOrder } from "@/lib/orders/service";
+import { deleteCompetitorEvent, deleteSupplier, deleteSupplierProduct, saveCompetitorEvent, saveProduct, saveSupplier, saveSupplierProduct } from "@/lib/master/service";
+import { commandPermission, denyMessage, hasPermission } from "@/lib/auth/permissions";
 import { commandSchema, type Command } from "@/lib/validation/commands";
 import { auth } from "@/auth";
 import { assertDatabaseEnvironment } from "@/lib/db/config";
 import { databaseErrorMessage, logDatabaseError } from "@/lib/db/errors";
-import { DecisionError, inventoryForTitle, requireTaskDecision, saveDecision, registerDecisionOrder } from "@/lib/decisions/service";
+import { approveDecision, DecisionError, inventoryForTitle, rejectDecision, requireTaskDecision, saveDecision, registerDecisionOrder } from "@/lib/decisions/service";
 import { suggestsDecision } from "@/lib/decisions/shared";
 import { dueForStorage, parseDueText } from "@/lib/utils/due";
 
@@ -20,7 +23,7 @@ function todayAt(hour = 18) {
   return new Date(`${value.year}-${value.month}-${value.day}T${String(hour).padStart(2, "0")}:00:00+09:00`);
 }
 
-async function execute(command: Command, actor: { id: string; name: string }) {
+async function execute(command: Command, actor: { id: string; name: string; permissions: string[] }) {
   switch (command.type) {
     case "ADD_TASKS": {
       const existing = await prisma.task.findMany({
@@ -37,6 +40,7 @@ async function execute(command: Command, actor: { id: string; name: string }) {
         title: task.title, category: task.category, priority: task.priority, dueAt: parseDueText(task.due) ? dueForStorage(task.due) : goalDue ?? dueForStorage("오늘"), dueLabel: task.due,
         status: "대기", aiExecutable: task.aiExecutable, source: task.source, reason: task.reason, groupId: group.id,
         requiresDecision: task.requiresDecision ?? suggestsDecision(task.title),
+        assigneeId: command.assigneeId === undefined ? actor.id : command.assigneeId,
         inventoryId: await inventoryForTitle(prisma, task.title),
       }))) });
       return `${tasks.length}개 업무를 추가했습니다.${tasks.length < command.tasks.length ? " 이미 있는 업무는 제외했습니다." : ""}`;
@@ -44,7 +48,7 @@ async function execute(command: Command, actor: { id: string; name: string }) {
     case "ADD_TASK": {
       const existing = await prisma.task.findFirst({ where: { title: command.title, status: { not: "완료" } } });
       if (existing) return "같은 미완료 업무가 이미 등록되어 있습니다.";
-      await prisma.task.create({ data: { title: command.title, category: command.category, priority: command.priority, dueAt: dueForStorage(command.due), dueLabel: command.due, reason: command.reason, source: "SYSTEM_SIGNAL", requiresDecision: command.requiresDecision ?? suggestsDecision(command.title), inventoryId: await inventoryForTitle(prisma, command.title) } });
+      await prisma.task.create({ data: { title: command.title, category: command.category, priority: command.priority, dueAt: dueForStorage(command.due), dueLabel: command.due, reason: command.reason, source: "SYSTEM_SIGNAL", requiresDecision: command.requiresDecision ?? suggestsDecision(command.title), inventoryId: await inventoryForTitle(prisma, command.title), assigneeId: command.assigneeId === undefined ? actor.id : command.assigneeId } });
       return "오늘 업무에 추가했습니다.";
     }
     case "TOGGLE_TASK": {
@@ -56,13 +60,45 @@ async function execute(command: Command, actor: { id: string; name: string }) {
     case "UPDATE_TASK": {
       const task = await prisma.task.findUniqueOrThrow({ where: { id: command.id } });
       if (command.status === "완료" && task.status !== "완료") await requireTaskDecision(prisma, task.id, command.requiresDecision);
-      await prisma.task.update({ where: { id: command.id }, data: { title: command.title, status: command.status, priority: command.priority, requiresDecision: command.requiresDecision, inventoryId: task.inventoryId ?? await inventoryForTitle(prisma, command.title) } });
+      await prisma.task.update({ where: { id: command.id }, data: { title: command.title, status: command.status, priority: command.priority, requiresDecision: command.requiresDecision, ...(command.assigneeId !== undefined ? { assigneeId: command.assigneeId } : {}), inventoryId: task.inventoryId ?? await inventoryForTitle(prisma, command.title) } });
       return "업무를 수정했습니다.";
     }
     case "REVIEW_TASK":
       throw new DecisionError("업무의 결정 기록을 열어주세요.", 409, command.id);
     case "SAVE_DECISION":
       return saveDecision(prisma, command, actor);
+    case "APPROVE_DECISION":
+      return approveDecision(prisma, command, actor);
+    case "REJECT_DECISION":
+      return rejectDecision(prisma, command, actor);
+    case "ASSIGN_TASK": {
+      const assignee = command.assigneeId ? await prisma.account.findUnique({ where: { id: command.assigneeId }, select: { name: true, active: true } }) : null;
+      if (command.assigneeId && (!assignee || !assignee.active)) throw new DecisionError("사용 중인 사용자에게만 맡길 수 있습니다.", 400);
+      const task = await prisma.task.update({ where: { id: command.id }, data: { assigneeId: command.assigneeId } });
+      return assignee ? `“${task.title}”을(를) ${assignee.name}님에게 맡겼습니다.` : `“${task.title}”의 담당자를 비웠습니다.`;
+    }
+    case "SAVE_SUPPLIER":
+      return saveSupplier(prisma, command);
+    case "DELETE_SUPPLIER":
+      return deleteSupplier(prisma, command);
+    case "SAVE_PRODUCT":
+      return saveProduct(prisma, command);
+    case "SAVE_SUPPLIER_PRODUCT":
+      return saveSupplierProduct(prisma, command);
+    case "DELETE_SUPPLIER_PRODUCT":
+      return deleteSupplierProduct(prisma, command);
+    case "SAVE_COMPETITOR_EVENT":
+      return saveCompetitorEvent(prisma, command);
+    case "DELETE_COMPETITOR_EVENT":
+      return deleteCompetitorEvent(prisma, command);
+    case "OPEN_PURCHASE_ORDER":
+      return "발주서 창은 화면에서 엽니다.";
+    case "SEND_PURCHASE_ORDER":
+      return sendPurchaseOrder(prisma, command);
+    case "CONFIRM_PO_DELIVERY":
+      return confirmPurchaseOrderDelivery(prisma, command);
+    case "RECEIVE_PO":
+      return receivePurchaseOrder(prisma, command);
     case "CREATE_ORDER":
       return registerDecisionOrder(prisma, command, todayAt(9));
     case "HOLD_ORDER": {
@@ -148,8 +184,11 @@ export async function POST(request: Request) {
     if (!session?.user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
     const command = commandSchema.parse(await request.json());
     assertDatabaseEnvironment();
-    const account = session.user.email ? await prisma.account.findUnique({ where: { email: session.user.email }, select: { id: true, name: true } }) : null;
+    const account = session.user.email ? await prisma.account.findUnique({ where: { email: session.user.email }, select: { id: true, name: true, permissions: true, active: true } }) : null;
     if (!account) return NextResponse.json({ error: "로그인을 다시 확인해주세요." }, { status: 401 });
+    if (!account.active) return NextResponse.json({ error: "사용이 중지된 계정입니다. 관리자에게 문의해주세요." }, { status: 403 });
+    const required = commandPermission(command.type);
+    if (!hasPermission(account, required)) return NextResponse.json({ error: denyMessage(required!), code: "FORBIDDEN" }, { status: 403 });
     const message = await execute(command, account);
     return NextResponse.json({ message, data: await getDashboardData(account.id) });
   } catch (error) {

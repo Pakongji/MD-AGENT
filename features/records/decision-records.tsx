@@ -5,7 +5,7 @@ import Link from "next/link";
 import { CheckCircle2, FileText, Search } from "lucide-react";
 import { Badge, Button, Card, DataBoundary, EmptyState, Modal } from "@/components/common/ui";
 import { useAppStore } from "@/lib/store/app-store";
-import { outcomeLabels } from "@/lib/decisions/shared";
+import { outcomeLabels, isEffective } from "@/lib/decisions/shared";
 import { shortDate, shortDateTime } from "@/lib/services/data-freshness";
 import type { TaskDecisionItem, TaskItem } from "@/lib/types/domain";
 
@@ -23,7 +23,7 @@ export function DecisionRecords() {
 
   const entries = useMemo<Entry[]>(() => {
     const results = new Map(data.knowledgeDocuments.filter((doc) => doc.source.startsWith(RESULT_SOURCE)).map((doc) => [doc.source.slice(RESULT_SOURCE.length), { content: doc.content, createdAt: doc.createdAt }]));
-    return data.tasks.flatMap((task) => task.decisions.filter((decision) => decision.status === "CONFIRMED").map((decision) => ({ decision, task, result: results.get(decision.id) })))
+    return data.tasks.flatMap((task) => task.decisions.filter(isEffective).map((decision) => ({ decision, task, result: results.get(decision.id) })))
       .sort((a, b) => (b.decision.confirmedAt ?? b.decision.createdAt).localeCompare(a.decision.confirmedAt ?? a.decision.createdAt));
   }, [data.knowledgeDocuments, data.tasks]);
 

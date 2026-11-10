@@ -8,6 +8,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import { DEMO_MONTHLY_TARGET, getSalesSnapshot, signedPercent } from "@/lib/services/dashboard-metrics";
 import { prioritizeProducts } from "@/lib/services/product-diagnostics";
 import { ProductDiagnosisPanel } from "./product-diagnosis-panel";
+import { ProductLabel } from "@/components/common/product-thumb";
 
 function periodDate(value?: string) {
   return value ? new Date(value).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" }) : "자료 없음";
@@ -46,7 +47,7 @@ export function SalesPage() {
     <Card>
       <SectionTitle title="상품별 성과 및 리스크" description="상품 집계값을 비교하고, 상품 진단에서 근거·대응안·결정 이력을 확인하세요." action={<label className="sales-product-filter">상품 목록 카테고리<select aria-label="상품 목록 카테고리" value={category} onChange={(event) => { setCategory(event.target.value); setProductOpen(null); }}><option>전체</option>{categories.map((item) => <option key={item}>{item}</option>)}</select></label>} />
       <p className="pd-data-note sales-product-scope">아래는 등록된 상품별 집계값입니다. 상품별 집계기간이 없어 상단의 일별 매출과 동일 기간으로 비교하지 않습니다.</p>
-      <div className="table-wrap"><table className="data-table"><thead><tr><th>상품</th><th>등록 매출</th><th>등록 판매량</th><th>재고일수 · 등록값</th><th>마진율</th><th>등록 상태</th><th>진단</th></tr></thead><tbody>{visibleProducts.map((product) => <tr key={product.id} className={productOpen === product.id ? "sales-product-selected" : undefined}><td><strong>{product.name}</strong><div className="tiny">{product.brand.name} · {product.category}</div></td><td>{compactMoney(product.revenue)}</td><td>{money(product.salesQty)}개</td><td>{product.inventory ? `${product.inventory.stockDays}일` : "미등록"}</td><td>{product.marginRate}%</td><td><Badge tone={product.risk.includes("품절") ? "red" : product.risk === "양호" ? "green" : "orange"}>{product.risk}</Badge></td><td><Button variant="secondary" onClick={() => setProductOpen(product.id)} aria-label={`${product.name} 상품 진단`}><Search size={12} /> 상품 진단</Button></td></tr>)}</tbody></table></div>
+      <div className="table-wrap"><table className="data-table"><thead><tr><th>상품</th><th>등록 매출</th><th>등록 판매량</th><th>재고일수 · 등록값</th><th>마진율</th><th>등록 상태</th><th>진단</th></tr></thead><tbody>{visibleProducts.map((product) => <tr key={product.id} className={productOpen === product.id ? "sales-product-selected" : undefined}><td><ProductLabel name={product.name} src={product.imageUrl ?? null} sub={`${product.brand.name} · ${product.category}`} /></td><td>{compactMoney(product.revenue)}</td><td>{money(product.salesQty)}개</td><td>{product.inventory ? `${product.inventory.stockDays}일` : "미등록"}</td><td>{product.marginRate}%</td><td><Badge tone={product.risk.includes("품절") ? "red" : product.risk === "양호" ? "green" : "orange"}>{product.risk}</Badge></td><td><Button variant="secondary" onClick={() => setProductOpen(product.id)} aria-label={`${product.name} 상품 진단`}><Search size={12} /> 상품 진단</Button></td></tr>)}</tbody></table></div>
       {!visibleProducts.length && <p className="pd-data-note">표시할 상품이 없습니다.</p>}
     </Card>
     <Modal open={scopeOpen} title="매출 집계와 분석 범위" onClose={() => setScopeOpen(false)}>
